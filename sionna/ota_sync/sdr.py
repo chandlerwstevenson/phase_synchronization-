@@ -60,8 +60,14 @@ class SDRSimulationConfig:
     phase_process_std_rad: float = 0.002
     frequency_process_std_hz: float = 0.1
 
-    sample_clock_offset_ppm: float = 10.0
+    # None derives the sample-clock offset from the carrier offset (shared
+    # reference crystal); a number forces a fixed, independent offset.
+    sample_clock_offset_ppm: float | None = None
     phase_noise_std_rad: float = 2e-4
+    phase_noise_white_pm_std_rad: float = 0.005
+    flicker_frequency_std_hz: float = 0.05
+    shadowing_std_db: float = 2.0
+    shadowing_correlation_s: float = 10.0
     iq_gain_imbalance_db: float = 0.2
     iq_phase_imbalance_deg: float = 1.0
     dc_offset: complex = 0.005 + 0.003j
@@ -74,6 +80,10 @@ class SDRSimulationConfig:
 
     phase_correction_bits: int = 16
     frequency_correction_resolution_hz: float = 0.01
+    correction_latency_intervals: int = 1
+    # Residual TX/RX chain phase asymmetry between the nodes after loopback
+    # calibration; it does not cancel in a two-way exchange.
+    twoway_chain_asymmetry_deg: float = 0.0
     seed: int = 0
     device: str = "auto"
 
@@ -111,6 +121,14 @@ class SDRSimulationConfig:
             raise ValueError("oscillator process deviations cannot be negative")
         if self.phase_noise_std_rad < 0.0:
             raise ValueError("phase_noise_std_rad cannot be negative")
+        if self.phase_noise_white_pm_std_rad < 0.0:
+            raise ValueError("phase_noise_white_pm_std_rad cannot be negative")
+        if self.flicker_frequency_std_hz < 0.0:
+            raise ValueError("flicker_frequency_std_hz cannot be negative")
+        if self.shadowing_std_db < 0.0:
+            raise ValueError("shadowing_std_db cannot be negative")
+        if self.shadowing_correlation_s <= 0.0:
+            raise ValueError("shadowing_correlation_s must be positive")
         if self.adc_bits < 2 or self.dac_bits < 2:
             raise ValueError("ADC and DAC resolution must be at least two bits")
         if not 0.0 < self.tx_amplitude <= 1.0:
@@ -123,6 +141,8 @@ class SDRSimulationConfig:
             raise ValueError("phase_correction_bits must be positive")
         if self.frequency_correction_resolution_hz <= 0.0:
             raise ValueError("frequency correction resolution must be positive")
+        if self.correction_latency_intervals < 0:
+            raise ValueError("correction_latency_intervals cannot be negative")
 
     @property
     def sample_period(self) -> float:
@@ -145,6 +165,8 @@ class SyncPreamble:
 @dataclass(frozen=True)
 class IQCapture:
     samples: torch.Tensor
+    oracle_samples: torch.Tensor
+    lo_walk_end: torch.Tensor
     inserted_start: int
     expected_arrival: int
     agc_gain: float
@@ -165,10 +187,12 @@ class SDRSimulationResult:
     """Metrics from an SDR-style synchronization run."""
 
     true_phase: torch.Tensor
+    true_ota_phase: torch.Tensor
     measured_ota_phase: torch.Tensor
     estimated_ota_phase: torch.Tensor
     channel_phase: torch.Tensor
     true_frequency: torch.Tensor
+    true_ota_frequency: torch.Tensor
     measured_frequency: torch.Tensor
     estimated_frequency: torch.Tensor
     ota_phase_error: torch.Tensor
@@ -179,6 +203,7 @@ class SDRSimulationResult:
     timing_error_samples: torch.Tensor
     detection_metric: torch.Tensor
     detected: torch.Tensor
+    correction_active: torch.Tensor
     agc_gain: torch.Tensor
     adc_clip_rate: torch.Tensor
     covariance: torch.Tensor
@@ -268,24 +293,92 @@ def _soft_limit(samples: torch.Tensor, limit: float) -> torch.Tensor:
     return samples * scale
 
 
-def _resample_clock_offset(samples: torch.Tensor, ppm: float) -> torch.Tensor:
-    """Linearly resample IQ at a receiver clock offset from nominal."""
+def _resample_clock_offset(
+    samples: torch.Tensor, ppm: float, delay_samples: float = 0.0
+) -> torch.Tensor:
+    """Linearly resample IQ at a receiver clock offset and fractional delay."""
 
-    if ppm == 0.0:
+    if ppm == 0.0 and delay_samples == 0.0:
         return samples
     ratio = 1.0 + ppm * 1e-6
     output_index = torch.arange(
         samples.numel(), dtype=REAL_DTYPE, device=samples.device
     )
-    source = output_index / ratio
+    source = output_index / ratio - delay_samples
     lower = torch.floor(source).to(torch.int64)
     upper = lower + 1
-    valid = upper < samples.numel()
+    valid = (lower >= 0) & (upper < samples.numel())
     lower = torch.clamp(lower, 0, samples.numel() - 1)
     upper = torch.clamp(upper, 0, samples.numel() - 1)
     fraction = source - lower.to(REAL_DTYPE)
     output = samples[lower] * (1.0 - fraction) + samples[upper] * fraction
     return torch.where(valid, output, torch.zeros_like(output))
+
+
+class _FlickerFrequencyNoise:
+    """Approximate flicker FM with a bank of first-order Gauss-Markov processes.
+
+    A sum of AR(1) components with log-spaced correlation times approximates a
+    1/f frequency-noise spectrum across the timescales the simulation spans,
+    which is the standard time-domain surrogate for flicker FM.
+    """
+
+    def __init__(
+        self,
+        std_hz: float,
+        interval_s: float,
+        horizon_s: float,
+        device: torch.device,
+        generator: torch.Generator,
+        components: int = 4,
+    ) -> None:
+        self.device = device
+        self.generator = generator
+        self.enabled = std_hz > 0.0
+        if not self.enabled:
+            self.innovation_variance = 0.0
+            return
+        shortest = 2.0 * interval_s
+        longest = max(horizon_s, 4.0 * interval_s)
+        exponents = torch.linspace(
+            math.log10(shortest),
+            math.log10(longest),
+            components,
+            dtype=REAL_DTYPE,
+            device=device,
+        )
+        correlation_times = torch.pow(
+            torch.tensor(10.0, dtype=REAL_DTYPE, device=device), exponents
+        )
+        self.rho = torch.exp(-interval_s / correlation_times)
+        component_std = 2.0 * math.pi * std_hz / math.sqrt(components)
+        self.sigma = torch.full(
+            (components,), component_std, dtype=REAL_DTYPE, device=device
+        )
+        self.state = self.sigma * torch.randn(
+            components, dtype=REAL_DTYPE, device=device, generator=generator
+        )
+        self.innovation_variance = float(
+            torch.sum(2.0 * self.sigma.square() * (1.0 - self.rho)).item()
+        )
+
+    def step(self) -> torch.Tensor:
+        """Advance one interval; return the flicker frequency offset in rad/s."""
+
+        if not self.enabled:
+            return torch.zeros((), dtype=REAL_DTYPE, device=self.device)
+        innovation = (
+            torch.randn(
+                self.sigma.numel(),
+                dtype=REAL_DTYPE,
+                device=self.device,
+                generator=self.generator,
+            )
+            * self.sigma
+            * torch.sqrt(1.0 - self.rho.square())
+        )
+        self.state = self.rho * self.state + innovation
+        return torch.sum(self.state)
 
 
 class SDRRadioLink:
@@ -297,11 +390,18 @@ class SDRRadioLink:
         preamble: SyncPreamble,
         device: torch.device,
         generator: torch.Generator,
+        mirror_of: "SDRRadioLink | None" = None,
     ) -> None:
         self.settings = settings
         self.preamble = preamble
         self.device = device
         self.generator = generator
+        # A mirrored link models the reverse direction of a reciprocal
+        # channel: it shares the taps and shadowing of the forward link (which
+        # must capture first each interval) while keeping its own receiver
+        # state (timing carry, noise floor).
+        self._mirror = mirror_of
+        self._last_shadow_amplitude = 1.0
         self.input_length = (
             preamble.length
             + 2 * settings.capture_guard_samples
@@ -311,29 +411,47 @@ class SDRRadioLink:
             settings.sample_rate, settings.maximum_channel_delay_s
         )
         self.l_tot = self.l_max - self.l_min + 1
+        self.interval_samples = int(
+            round(settings.sync_interval * settings.sample_rate)
+        )
+        # Receiver clock error accumulated since the capture window was last
+        # re-centered, in samples.
+        self._timing_carry = 0.0
+        # Thermal noise floor, fixed after the first frame at the nominal
+        # (unshadowed) channel gain so fading changes the actual SNR.
+        self._noise_power: torch.Tensor | None = None
+        self._shadow_rho = math.exp(
+            -settings.sync_interval / settings.shadowing_correlation_s
+        )
+        self._shadow_db = settings.shadowing_std_db * torch.randn(
+            (), dtype=REAL_DTYPE, device=device, generator=generator
+        )
 
-        self.tdl = TDL(
-            model=settings.tdl_model,
-            delay_spread=settings.delay_spread_s,
-            carrier_frequency=settings.carrier_frequency_hz,
-            min_speed=settings.channel_speed_mps,
-            max_speed=settings.channel_speed_mps,
-            precision="double",
-            device=str(device),
-        )
-        coefficients, delays = self.tdl(
-            batch_size=1,
-            num_time_steps=settings.num_iterations,
-            sampling_frequency=1.0 / settings.sync_interval,
-        )
-        self.channel_taps = cir_to_time_channel(
-            settings.sample_rate,
-            coefficients,
-            delays,
-            self.l_min,
-            self.l_max,
-            normalize=True,
-        )
+        if mirror_of is not None:
+            self.channel_taps = mirror_of.channel_taps
+        else:
+            self.tdl = TDL(
+                model=settings.tdl_model,
+                delay_spread=settings.delay_spread_s,
+                carrier_frequency=settings.carrier_frequency_hz,
+                min_speed=settings.channel_speed_mps,
+                max_speed=settings.channel_speed_mps,
+                precision="double",
+                device=str(device),
+            )
+            coefficients, delays = self.tdl(
+                batch_size=1,
+                num_time_steps=settings.num_iterations,
+                sampling_frequency=1.0 / settings.sync_interval,
+            )
+            self.channel_taps = cir_to_time_channel(
+                settings.sample_rate,
+                coefficients,
+                delays,
+                self.l_min,
+                self.l_max,
+                normalize=True,
+            )
         self._apply_channel = ApplyTimeChannel(
             num_time_samples=self.input_length,
             l_tot=self.l_tot,
@@ -356,11 +474,40 @@ class SDRRadioLink:
         taps = self.channel_taps[..., iteration, :].unsqueeze(-2)
         return taps.expand(*taps.shape[:-2], output_length, self.l_tot)
 
+    def _step_shadowing(self) -> float:
+        """Advance the temporally correlated log-normal shadowing process."""
+
+        if self._mirror is not None:
+            # Reciprocity: reuse the forward link's shadowing for this frame.
+            return self._mirror._last_shadow_amplitude
+        if self.settings.shadowing_std_db <= 0.0:
+            self._last_shadow_amplitude = 1.0
+            return 1.0
+        innovation = torch.randn(
+            (), dtype=REAL_DTYPE, device=self.device, generator=self.generator
+        )
+        self._shadow_db = (
+            self._shadow_rho * self._shadow_db
+            + math.sqrt(1.0 - self._shadow_rho**2)
+            * self.settings.shadowing_std_db
+            * innovation
+        )
+        self._last_shadow_amplitude = float(10.0 ** (self._shadow_db.item() / 20.0))
+        return self._last_shadow_amplitude
+
     def capture(
-        self, master: Oscillator, slave: Oscillator, iteration: int
+        self, master: Oscillator, slave: Oscillator, iteration: int, sfo_ppm: float
     ) -> IQCapture:
         settings = self.settings
-        start = self._random_start()
+        # Clock error accumulates between frames. The receiver re-centers its
+        # window on each detection, so whole-sample drift steps the insertion
+        # point while the sub-sample residual remains as a fractional delay.
+        self._timing_carry += sfo_ppm * 1e-6 * self.interval_samples
+        drift_step = int(round(self._timing_carry))
+        self._timing_carry -= drift_step
+        fractional_delay = self._timing_carry
+        start = self._random_start() + drift_step
+        start = min(max(start, 0), self.input_length - self.preamble.length)
         center = start + (self.preamble.length - 1) / 2.0
         sample_index = torch.arange(
             self.input_length, dtype=REAL_DTYPE, device=self.device
@@ -379,23 +526,33 @@ class SDRRadioLink:
         clean = self._apply_channel(
             channel_input, self._channel_for_frame(iteration)
         ).reshape(-1)
+        shadow_amplitude = self._step_shadowing()
+        clean = clean * shadow_amplitude
         active_start = max(0, start - self.l_min)
         active_stop = min(clean.numel(), active_start + self.preamble.length)
-        signal_power = torch.mean(torch.abs(clean[active_start:active_stop]).square())
-        noise_power = signal_power / (10.0 ** (settings.snr_db / 10.0))
-        received = self._awgn(clean, noise_power)
+        if self._noise_power is None:
+            nominal_power = torch.mean(
+                torch.abs(clean[active_start:active_stop] / shadow_amplitude).square()
+            )
+            self._noise_power = nominal_power / (10.0 ** (settings.snr_db / 10.0))
+        received = self._awgn(clean, self._noise_power)
 
-        received = _resample_clock_offset(received, settings.sample_clock_offset_ppm)
+        received = _resample_clock_offset(received, sfo_ppm, fractional_delay)
+        # The oracle path shares the frame, channel realization, shadowing,
+        # deterministic transmit hardware, and sample-clock timing, but carries
+        # no stochastic noise or receiver impairments. It defines the
+        # ground-truth observable.
+        oracle = _resample_clock_offset(clean, sfo_ppm, fractional_delay)
         output_index = torch.arange(
             received.numel(), dtype=REAL_DTYPE, device=self.device
         )
-        physical_index = (
-            output_index / (1.0 + settings.sample_clock_offset_ppm * 1e-6) + self.l_min
-        )
+        physical_index = output_index / (1.0 + sfo_ppm * 1e-6) + self.l_min
         receive_time = (physical_index - center) * settings.sample_period
         slave_carrier = torch.exp(-1j * (slave.phase + slave.frequency * receive_time))
         received = received * slave_carrier
+        oracle = oracle * slave_carrier
 
+        lo_walk_end = torch.zeros((), dtype=REAL_DTYPE, device=self.device)
         if settings.phase_noise_std_rad > 0.0:
             phase_noise = torch.cumsum(
                 torch.randn(
@@ -408,6 +565,21 @@ class SDRRadioLink:
                 dim=0,
             )
             received = received * torch.exp(1j * phase_noise)
+            # End value of the intra-frame walk; the caller carries it into
+            # the oscillator state so the LO noise is one continuous process.
+            lo_walk_end = phase_noise[-1]
+
+        if settings.phase_noise_white_pm_std_rad > 0.0:
+            jitter = (
+                torch.randn(
+                    received.numel(),
+                    dtype=REAL_DTYPE,
+                    device=self.device,
+                    generator=self.generator,
+                )
+                * settings.phase_noise_white_pm_std_rad
+            )
+            received = received * torch.exp(1j * jitter)
 
         gain_ratio = 10.0 ** (settings.iq_gain_imbalance_db / 40.0)
         phase_skew = math.radians(settings.iq_phase_imbalance_deg)
@@ -423,6 +595,8 @@ class SDRRadioLink:
 
         return IQCapture(
             samples=received,
+            oracle_samples=oracle,
+            lo_walk_end=lo_walk_end,
             inserted_start=start,
             expected_arrival=start - self.l_min,
             agc_gain=agc_gain.item(),
@@ -470,8 +644,8 @@ class SDRSynchronizer:
         )
         return coarse_start, frequency
 
-    def estimate(self, capture: IQCapture) -> SDRMeasurement:
-        samples = capture.samples - torch.mean(capture.samples)
+    def estimate(self, samples: torch.Tensor) -> SDRMeasurement:
+        samples = samples - torch.mean(samples)
         coarse_start, coarse_frequency = self._coarse_timing_and_frequency(samples)
 
         sample_index = torch.arange(
@@ -581,6 +755,30 @@ def _measurement_covariance(
     frequency_variance = 1.0 / (
         snr * settings.long_sequence_length * separation_time**2
     )
+    # The receiver LO phase noise accumulates as a random walk across the
+    # frame and usually dominates the AWGN Cramer-Rao bound. The phase
+    # estimate averages the walk over the long training fields, and the fine
+    # CFO estimate differences the walk between the two fields.
+    long_field_offset = preamble.short_length + settings.long_cp_length
+    long_field_span = preamble.length - long_field_offset
+    phase_noise_variance = settings.phase_noise_std_rad**2
+    phase_variance += phase_noise_variance * (
+        long_field_offset + long_field_span / 3.0
+    )
+    separation_samples = (
+        settings.long_repetitions - 1
+    ) * preamble.long_block_length
+    frequency_variance += (
+        phase_noise_variance * separation_samples / separation_time**2
+    )
+    # White PM adds an independent phase jitter per sample; it averages down
+    # over the long training fields but still belongs in the noise budget.
+    white_pm_variance = settings.phase_noise_white_pm_std_rad**2
+    total_long_samples = settings.long_sequence_length * settings.long_repetitions
+    phase_variance += white_pm_variance / total_long_samples
+    frequency_variance += 2.0 * white_pm_variance / (
+        settings.long_sequence_length * separation_time**2
+    )
     return torch.diag(
         torch.tensor(
             [phase_variance, phase_variance, frequency_variance],
@@ -644,9 +842,28 @@ def run_sdr_simulation(
     link = SDRRadioLink(settings, preamble, device, generator)
     synchronizer = SDRSynchronizer(settings, preamble)
     measurement_noise = _measurement_covariance(settings, preamble, device)
+    # The LO white-FM walk accumulated over a full synchronization interval is
+    # part of the true relative phase evolution, so the EKF must model it, as
+    # is the per-interval innovation of the flicker FM component.
+    interval_samples = int(round(settings.sync_interval * settings.sample_rate))
+    white_fm_phase_variance = settings.phase_noise_std_rad**2 * interval_samples
+    flicker = _FlickerFrequencyNoise(
+        settings.flicker_frequency_std_hz,
+        settings.sync_interval,
+        settings.num_iterations * settings.sync_interval,
+        device,
+        generator,
+    )
+    ekf_process_covariance = 2.0 * oscillator_covariance + torch.diag(
+        torch.tensor(
+            [white_fm_phase_variance, flicker.innovation_variance],
+            dtype=REAL_DTYPE,
+            device=device,
+        )
+    )
     ekf = PhaseFrequencyEKF(
         settings.sync_interval,
-        2.0 * oscillator_covariance,
+        ekf_process_covariance,
         measurement_noise,
         device,
         initial_covariance=torch.diag(
@@ -663,10 +880,12 @@ def run_sdr_simulation(
         name: []
         for name in (
             "true_phase",
+            "true_ota_phase",
             "measured_ota_phase",
             "estimated_ota_phase",
             "channel_phase",
             "true_frequency",
+            "true_ota_frequency",
             "measured_frequency",
             "estimated_frequency",
             "ota_phase_error",
@@ -677,19 +896,74 @@ def run_sdr_simulation(
             "timing_error_samples",
             "detection_metric",
             "detected",
+            "correction_active",
             "agc_gain",
             "adc_clip_rate",
             "covariance",
         )
     }
 
+    capture_samples = link.input_length + link.l_tot - 1
+    remainder_samples = max(0, interval_samples - capture_samples)
+    pending_corrections: dict[int, torch.Tensor] = {}
+    carried_lo_walk = torch.zeros((), dtype=REAL_DTYPE, device=device)
+    flicker_previous = torch.zeros((), dtype=REAL_DTYPE, device=device)
+    # NCO corrections are digital; they never touch the physical reference
+    # crystal, so the sample clock and timing drift follow the uncorrected
+    # oscillator frequency.
+    slave_frequency_corrections = torch.zeros((), dtype=REAL_DTYPE, device=device)
+    correction_has_loaded = False
+
     for iteration in range(settings.num_iterations):
         master.step()
         slave.step()
+        # Fold the LO white-FM walk from the previous interval into the true
+        # oscillator state so intra-frame and inter-frame phase noise form one
+        # continuous process rather than independent draws per capture.
+        master.state[0] = wrap_phase(master.state[0] + carried_lo_walk)
+        flicker_now = flicker.step()
+        master.state[1] = master.state[1] + (flicker_now - flicker_previous)
+        flicker_previous = flicker_now
+
+        # NCO commands issued earlier take effect only now, after the
+        # configured processing latency.
+        due_correction = pending_corrections.pop(iteration, None)
+        if due_correction is not None:
+            slave.apply_correction(due_correction)
+            slave_frequency_corrections = (
+                slave_frequency_corrections + due_correction[1]
+            )
+            correction_has_loaded = True
+
+        if settings.sample_clock_offset_ppm is not None:
+            sfo_ppm = settings.sample_clock_offset_ppm
+        else:
+            # Carrier LO and sample clock share one reference: the fractional
+            # sample-clock error equals the fractional carrier error of the
+            # physical (correction-free) oscillators, drift included.
+            physical_slave_frequency = slave.state[1] - slave_frequency_corrections
+            sfo_ppm = float(
+                (physical_slave_frequency - master.state[1]).item()
+                / (2.0 * math.pi * settings.carrier_frequency_hz)
+                * 1e6
+            )
+
         relative_state = master.state - slave.state
-        capture = link.capture(master, slave, iteration)
-        measurement = synchronizer.estimate(capture)
+        capture = link.capture(master, slave, iteration, sfo_ppm)
+        measurement = synchronizer.estimate(capture.samples)
+        oracle = synchronizer.estimate(capture.oracle_samples)
+
+        if settings.phase_noise_std_rad > 0.0 and remainder_samples > 0:
+            tail = torch.randn(
+                (), dtype=REAL_DTYPE, device=device, generator=generator
+            ) * (settings.phase_noise_std_rad * math.sqrt(remainder_samples))
+            carried_lo_walk = capture.lo_walk_end + tail
+        else:
+            carried_lo_walk = capture.lo_walk_end
+
         ekf.predict()
+        if due_correction is not None:
+            ekf.reset_after_correction(due_correction)
 
         if measurement.detected:
             if not acquired:
@@ -710,24 +984,35 @@ def run_sdr_simulation(
                     )
                 )
                 ekf.update(observation)
-            correction = _quantize_correction(ekf.state.clone(), settings)
+            # The controller knows its own latency and forwards-predicts the
+            # command to the instant it will actually load into the NCO.
+            predicted = ekf.state.clone()
+            for _ in range(settings.correction_latency_intervals):
+                predicted = ekf.transition @ predicted
+            correction = _quantize_correction(predicted, settings)
         else:
-            correction = torch.zeros(2, dtype=REAL_DTYPE, device=device)
+            correction = None
 
         true_phase = wrap_phase(relative_state[0])
         estimated_phase = wrap_phase(ekf.state[0])
-        channel_phase = wrap_phase(measurement.phase - true_phase)
+        # The oracle receiver defines the ground-truth observable: relative
+        # oscillator state plus channel response, free of noise and receiver
+        # impairments. All error metrics are computed against it.
+        true_ota_phase = oracle.phase
+        channel_phase = wrap_phase(true_ota_phase - true_phase)
         history["true_phase"].append(true_phase.clone())
+        history["true_ota_phase"].append(true_ota_phase.clone())
         history["measured_ota_phase"].append(measurement.phase.clone())
         history["estimated_ota_phase"].append(estimated_phase.clone())
         history["channel_phase"].append(channel_phase.clone())
         history["true_frequency"].append(relative_state[1].clone())
+        history["true_ota_frequency"].append(oracle.frequency.clone())
         history["measured_frequency"].append(measurement.frequency.clone())
         history["estimated_frequency"].append(ekf.state[1].clone())
         history["ota_phase_error"].append(
-            wrap_phase(measurement.phase - estimated_phase)
+            wrap_phase(true_ota_phase - estimated_phase)
         )
-        history["frequency_error"].append((relative_state[1] - ekf.state[1]).clone())
+        history["frequency_error"].append((oracle.frequency - ekf.state[1]).clone())
         history["timing_error_samples"].append(
             torch.tensor(
                 measurement.timing_index - capture.expected_arrival,
@@ -749,12 +1034,32 @@ def run_sdr_simulation(
         )
         history["covariance"].append(ekf.covariance.clone())
 
-        slave.apply_correction(correction)
-        ekf.reset_after_correction(correction)
-        residual_state = master.state - slave.state
-        history["post_correction_ota_phase"].append(
-            wrap_phase(measurement.phase - correction[0]).clone()
+        if correction is not None:
+            if settings.correction_latency_intervals == 0:
+                slave.apply_correction(correction)
+                ekf.reset_after_correction(correction)
+                slave_frequency_corrections = (
+                    slave_frequency_corrections + correction[1]
+                )
+            else:
+                pending_corrections[
+                    iteration + settings.correction_latency_intervals
+                ] = correction
+
+        # With latency, this capture already reflects every correction that has
+        # physically loaded into the NCO, so the true observable phase IS the
+        # closed-loop residual, including drift accumulated during the latency.
+        if settings.correction_latency_intervals == 0 and correction is not None:
+            post_ota_phase = wrap_phase(true_ota_phase - correction[0])
+        else:
+            post_ota_phase = wrap_phase(true_ota_phase)
+        if settings.correction_latency_intervals == 0 and correction is not None:
+            correction_has_loaded = True
+        history["correction_active"].append(
+            torch.tensor(correction_has_loaded, dtype=torch.bool, device=device)
         )
+        residual_state = master.state - slave.state
+        history["post_correction_ota_phase"].append(post_ota_phase.clone())
         history["post_correction_oscillator_phase"].append(
             wrap_phase(residual_state[0]).clone()
         )

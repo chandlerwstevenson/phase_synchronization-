@@ -11,8 +11,10 @@ from ota_sync import (
     SDRSimulationConfig,
     SDRSimulationResult,
     SimulationConfig,
+    evaluate_csi_joint_transmission,
     run_sdr_simulation,
     run_simulation,
+    run_two_way_simulation,
 )
 
 
@@ -22,9 +24,16 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--model",
-        choices=("sdr", "ideal"),
+        choices=("sdr", "twoway", "ideal"),
         default="sdr",
-        help="sampled-IQ SDR model (default) or the original ideal AWGN model",
+        help="one-way sampled-IQ SDR model (default), reciprocal two-way "
+        "sync for open-loop coherence, or the ideal AWGN model",
+    )
+    parser.add_argument(
+        "--csi-gain",
+        action="store_true",
+        help="with --model sdr: also report coherent joint-transmission gain "
+        "at a user vs. CSI refresh cadence",
     )
     parser.add_argument("--iterations", type=int, default=100)
     parser.add_argument("--snr-db", type=float, default=20.0)
@@ -43,11 +52,35 @@ def parse_args() -> argparse.Namespace:
     sdr.add_argument("--sample-rate", type=float, default=1e6, help="IQ sample rate")
     sdr.add_argument("--carrier-mhz", type=float, default=915.0)
     sdr.add_argument("--cfo-hz", type=float, default=1500.0)
-    sdr.add_argument("--sfo-ppm", type=float, default=10.0)
+    sdr.add_argument(
+        "--sfo-ppm",
+        type=float,
+        default=None,
+        help="fixed sample-clock offset; default derives it from the carrier "
+        "offset (shared reference crystal)",
+    )
+    sdr.add_argument(
+        "--flicker-std-hz",
+        type=float,
+        default=0.05,
+        help="RMS flicker FM frequency deviation of the references",
+    )
+    sdr.add_argument(
+        "--shadowing-std-db",
+        type=float,
+        default=2.0,
+        help="std of the temporally correlated log-normal shadowing",
+    )
     sdr.add_argument("--tdl-model", choices=("A", "B", "C", "D", "E"), default="D")
     sdr.add_argument("--delay-spread-ns", type=float, default=100.0)
     sdr.add_argument("--speed-mps", type=float, default=0.0)
     sdr.add_argument("--adc-bits", type=int, default=12)
+    sdr.add_argument(
+        "--correction-latency",
+        type=int,
+        default=1,
+        help="processing latency in sync intervals before an NCO command loads",
+    )
     sdr.add_argument(
         "--no-rf-impairments",
         action="store_true",
@@ -98,13 +131,19 @@ def plot_sdr_result(result: SDRSimulationResult) -> None:
     import numpy as np
 
     iteration = np.arange(len(result.true_phase))
+    true_ota_phase = result.true_ota_phase.numpy()
     measured_phase = result.measured_ota_phase.numpy()
     estimated_phase = result.estimated_ota_phase.numpy()
     post_phase_mrad = 1e3 * result.post_correction_ota_phase.numpy()
-    post_rms_mrad = float(np.sqrt(np.mean(np.square(post_phase_mrad))))
+    steady = (result.detected & result.correction_active).numpy()
+    if np.any(steady):
+        post_rms_mrad = float(np.sqrt(np.mean(np.square(post_phase_mrad[steady]))))
+    else:
+        post_rms_mrad = float("nan")
 
     figure, axes = plt.subplots(2, 1, figsize=(10, 7), sharex=True)
-    axes[0].plot(iteration, measured_phase, linewidth=1.6, label="measured OTA")
+    axes[0].plot(iteration, true_ota_phase, linewidth=1.8, label="true OTA")
+    axes[0].plot(iteration, measured_phase, linewidth=1.0, alpha=0.7, label="measured")
     axes[0].plot(iteration, estimated_phase, "--", linewidth=1.3, label="EKF estimate")
     axes[0].axhline(0.0, color="black", linewidth=0.7, alpha=0.5)
     axes[0].set_ylabel("phase (rad)")
@@ -118,7 +157,7 @@ def plot_sdr_result(result: SDRSimulationResult) -> None:
         color="tab:red",
         linestyle=":",
         linewidth=1.0,
-        label=f"RMS = {post_rms_mrad:.3f} mrad",
+        label=f"steady RMS = {post_rms_mrad:.3f} mrad",
     )
     axes[1].axhline(
         -post_rms_mrad,
@@ -136,7 +175,7 @@ def plot_sdr_result(result: SDRSimulationResult) -> None:
     figure.suptitle(
         "OTA phase synchronization\n"
         f"tracking RMSE={1e3 * result.ota_phase_rmse:.3f} mrad, "
-        f"post-correction RMS={post_rms_mrad:.3f} mrad",
+        f"steady residual RMS={post_rms_mrad:.3f} mrad",
         fontsize=13,
     )
     figure.tight_layout(rect=(0.0, 0.0, 1.0, 0.92))
@@ -150,13 +189,17 @@ def plot_sdr_diagnostics(result: SDRSimulationResult) -> None:
     iteration = np.arange(len(result.true_phase))
     figure, axes = plt.subplots(3, 2, figsize=(12, 9), sharex=True)
 
+    true_ota_phase = result.true_ota_phase.numpy()
     measured_phase = result.measured_ota_phase.numpy()
     estimated_phase = result.estimated_ota_phase.numpy()
     oscillator_phase = np.unwrap(result.true_phase.numpy())
     channel_phase = np.unwrap(result.channel_phase.numpy())
     effective_phase = oscillator_phase + channel_phase
 
-    axes[0, 0].plot(iteration, measured_phase, linewidth=1.5, label="measured")
+    axes[0, 0].plot(iteration, true_ota_phase, linewidth=1.7, label="true")
+    axes[0, 0].plot(
+        iteration, measured_phase, linewidth=1.0, alpha=0.7, label="measured"
+    )
     axes[0, 0].plot(
         iteration, estimated_phase, "--", linewidth=1.2, label="EKF estimate"
     )
@@ -181,7 +224,7 @@ def plot_sdr_diagnostics(result: SDRSimulationResult) -> None:
 
     axes[1, 0].plot(
         iteration,
-        result.true_frequency / (2.0 * math.pi),
+        result.true_ota_frequency / (2.0 * math.pi),
         linewidth=1.5,
         label="true",
     )
@@ -279,7 +322,7 @@ def run_ideal(args: argparse.Namespace) -> None:
         plot_ideal_result(result)
 
 
-def run_sdr(args: argparse.Namespace) -> None:
+def sdr_settings_from_args(args: argparse.Namespace) -> SDRSimulationConfig:
     settings_values = {
         "num_iterations": args.iterations,
         "snr_db": args.snr_db,
@@ -287,10 +330,13 @@ def run_sdr(args: argparse.Namespace) -> None:
         "carrier_frequency_hz": args.carrier_mhz * 1e6,
         "slave_initial_frequency_hz": args.cfo_hz,
         "sample_clock_offset_ppm": args.sfo_ppm,
+        "flicker_frequency_std_hz": args.flicker_std_hz,
+        "shadowing_std_db": args.shadowing_std_db,
         "tdl_model": args.tdl_model,
         "delay_spread_s": args.delay_spread_ns * 1e-9,
         "channel_speed_mps": args.speed_mps,
         "adc_bits": args.adc_bits,
+        "correction_latency_intervals": args.correction_latency,
         "device": args.device,
         "seed": args.seed,
     }
@@ -299,39 +345,75 @@ def run_sdr(args: argparse.Namespace) -> None:
             {
                 "sample_clock_offset_ppm": 0.0,
                 "phase_noise_std_rad": 0.0,
+                "phase_noise_white_pm_std_rad": 0.0,
+                "flicker_frequency_std_hz": 0.0,
+                "shadowing_std_db": 0.0,
                 "iq_gain_imbalance_db": 0.0,
                 "iq_phase_imbalance_deg": 0.0,
                 "dc_offset": 0j,
             }
         )
-    settings = SDRSimulationConfig(**settings_values)
+    return SDRSimulationConfig(**settings_values)
+
+
+def run_sdr(args: argparse.Namespace) -> None:
+    settings = sdr_settings_from_args(args)
     result = run_sdr_simulation(settings)
-    post_ota_rms = torch.sqrt(
-        torch.mean(result.post_correction_ota_phase[result.detected].square())
-    ).item()
+    steady = result.detected & result.correction_active
+    if torch.any(steady):
+        post_ota_rms = torch.sqrt(
+            torch.mean(result.post_correction_ota_phase[steady].square())
+        ).item()
+    else:
+        post_ota_rms = float("nan")
     print("model: sampled-IQ SDR")
     print(f"channel: Sionna 3GPP TDL-{settings.tdl_model}")
     print(f"device: {result.device}")
     print(f"packet detection rate: {100.0 * result.detection_rate:.2f}%")
     print(f"OTA phase tracking RMSE: {result.ota_phase_rmse:.6g} rad")
     print(f"frequency tracking RMSE: {result.frequency_rmse / (2.0 * math.pi):.6g} Hz")
-    print(f"post-correction OTA phase RMS: {post_ota_rms:.6g} rad")
+    print(f"steady-state OTA phase residual RMS: {post_ota_rms:.6g} rad")
     print(f"final OTA phase residual: {result.final_ota_phase_error:.6g} rad")
     print(
         "final raw oscillator phase residual: "
         f"{result.final_oscillator_phase_error:.6g} rad"
     )
     print(f"final CFO residual: {result.final_frequency_error_hz:.6g} Hz")
+    if args.csi_gain:
+        gains = evaluate_csi_joint_transmission(result, seed=args.seed)
+        print("coherent JT gain at user vs. CSI refresh cadence:")
+        for refresh, gain in gains.items():
+            print(f"  every {refresh:>2} interval(s): {100.0 * gain:.2f}%")
     if args.plot_all:
         plot_sdr_diagnostics(result)
     elif args.plot:
         plot_sdr_result(result)
 
 
+def run_twoway(args: argparse.Namespace) -> None:
+    result = run_two_way_simulation(sdr_settings_from_args(args))
+    print("model: reciprocal two-way SDR (open-loop coherence)")
+    print(f"device: {result.device}")
+    print(f"detection rate (both directions): {100.0 * result.detection_rate:.2f}%")
+    print(f"oscillator phase tracking RMSE: {result.phase_rmse:.6g} rad")
+    print(
+        "steady-state oscillator phase residual RMS: "
+        f"{result.steady_state_phase_rms:.6g} rad"
+    )
+    print(
+        "mean open-loop 2-station coherent gain: "
+        f"{100.0 * result.mean_coherent_gain:.2f}%"
+    )
+    print(f"final oscillator phase residual: {result.final_phase_error:.6g} rad")
+    print(f"final CFO residual: {result.final_frequency_error_hz:.6g} Hz")
+
+
 def main() -> None:
     args = parse_args()
     if args.model == "ideal":
         run_ideal(args)
+    elif args.model == "twoway":
+        run_twoway(args)
     else:
         run_sdr(args)
 

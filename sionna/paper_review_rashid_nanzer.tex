@@ -1,0 +1,138 @@
+\documentclass[10pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{microtype}
+\usepackage[hidelinks]{hyperref}
+
+\newcommand{\code}[1]{\texttt{#1}}
+
+\title{Review of Rashid \& Nanzer, ``Frequency and Phase Synchronization in
+Distributed Antenna Arrays Based on Consensus Averaging and Kalman
+Filtering''\\[2pt]
+\large IEEE Transactions on Wireless Communications, vol.~22, no.~4,
+pp.~2789--2802, April 2023. DOI 10.1109/TWC.2022.3213788}
+\author{Chandler Stevenson}
+\date{July 28, 2026}
+
+\begin{document}
+\maketitle
+
+\section{Summary}
+The paper addresses joint frequency and phase alignment of $N$ oscillators
+in an open-loop coherent distributed array---one with no feedback from the
+beamforming destination. Each node locally broadcasts its oscillator
+frequency and phase to its neighbors over an undirected connectivity graph.
+In the baseline algorithm, \emph{decentralized frequency and phase consensus}
+(DFPC), every node iteratively replaces its state with a weighted
+(Metropolis--Hastings) average of its neighbors'; the doubly stochastic
+mixing matrix $\mathbf{W}$ drives all nodes to the arithmetic mean of their
+initial states, with convergence speed and residual error governed by the
+second-largest eigenvalue modulus $\lambda_2$.
+
+Errors are injected at each iteration from a practical statistical model:
+oscillator frequency drift from a two-term Allan-deviation law
+$\sigma_f = f_c\sqrt{\beta_1/T + \beta_2 T}$ (white FM plus random-walk FM,
+$\beta_1{=}\beta_2{=}5\times10^{-19}$ for a quartz TCXO), intra-interval
+drift, phase jitter drawn per interval from the oscillator's integrated
+phase-noise power ($A = -53.46$\,dBc $\Rightarrow \sigma_\theta =
+2.7$\,mrad), and frequency/phase estimation errors at their Cram\'er--Rao
+bounds for an $L$-sample observation at a given SNR. The central analytical
+result (their Eq.~27) is a closed-form steady-state total phase error for
+DFPC on sparsely connected graphs: a root-sum-of-squares of five terms ---
+oscillator drift over the update interval ($2\pi\sigma_f T$), intra-interval
+drift, phase jitter, and the two estimation errors.
+
+To reduce the residual at short update intervals, the paper integrates a
+per-node two-state Kalman filter (state $[f_n,\theta_n]$, process noise from
+the drift/jitter statistics, measurement noise at the CRLBs) whose posterior
+means are then consensus-averaged (KF-DFPC). Monte Carlo results
+($f_c = 1$\,GHz, $f_s = 10$\,MHz, $T = 0.1$\,ms typical, $10^3$ trials)
+show: (i) KF-DFPC converges in dramatically fewer iterations than DFPC on
+sparse graphs (e.g., 2 vs.~16 iterations at $N{=}100$, connectivity 0.05;
+4 vs.~158 at $N{=}65$); (ii) it outperforms diffusion LMS, diffusion KF, and
+the Kalman consensus information filter in various regimes; (iii) its
+converged total phase error is essentially independent of SNR, unlike DFPC,
+whose error at low SNR is estimation-dominated; and (iv) sweeping the update
+interval reveals an optimum ($T \approx 20$\,ms at their parameters) where
+drift-driven and estimation-driven errors balance---DFPC degrades on either
+side, while KF-DFPC holds the theoretical floor for $T \lesssim 20$\,ms.
+Throughout, an $18^\circ$ total phase error is used as the threshold for
+retaining ${\geq}90\%$ of ideal coherent gain.
+
+\section{Contributions}
+\begin{enumerate}
+\item A fully decentralized joint frequency-\emph{and}-phase consensus
+algorithm (DFPC), extending prior decentralized work that aligned frequency
+only, with convergence to the arithmetic average of initial states.
+\item A closed-form steady-state total phase error for DFPC (Eq.~27),
+derived by propagating per-iteration error injections through the consensus
+recursion, with the graph dependence captured through $\lambda_2$.
+\item A practical, parameterized error model connecting oscillator
+data-sheet quantities (Allan deviation coefficients, integrated phase-noise
+power) and estimator quality (CRLBs vs.\ $L$ and SNR) to array-level phase
+coherence, including the effect of TDMA-shared observation time.
+\item KF-DFPC: the integration of per-node Kalman filtering with consensus
+averaging, including the covariance bookkeeping across the mixing step, at
+per-node complexity $\mathcal{O}(\mathrm{card}\{\chi_n\}+8)$---no asymptotic
+overhead relative to plain DFPC for dense graphs.
+\item A thorough comparative simulation study (DFPC, KF-DFPC, DLMS, DKF,
+KCIF) across array size, connectivity, SNR, and update interval,
+establishing when Kalman filtering pays: short update intervals, low SNR,
+and sparse connectivity.
+\end{enumerate}
+
+\section{Limitations}
+The following are assessed from a full read of the published text.
+\begin{enumerate}
+\item \textbf{No propagation channel in the measurement model.} Nodes
+observe each other's oscillator signal directly in AWGN (their Eq.~15).
+All geometry- and channel-induced phases are lumped into a uniform constant
+$\theta_n^e$ assumed corrected elsewhere. The identifiability problem this
+hides---a one-way receiver observes oscillator \emph{plus} channel phase and
+cannot separate them without reciprocity or calibration---is central to any
+over-the-air realization and is not addressed. Multipath appears only as a
+qualitative remark.
+\item \textbf{Statistics-level validation.} The simulations inject Gaussian
+draws from the assumed error distributions (Algorithm~1) rather than
+processing waveforms through a receiver. The theory is therefore validated
+against its own assumptions; estimator failures (missed detection, timing
+error, cycle slips), quantization, and analog impairments are outside the
+model.
+\item \textbf{Instantaneous, idealized actuation.} Consensus updates are
+applied as immediate state assignments each iteration. There is no
+correction latency, no NCO quantization, and no control-loop dynamics; the
+single mention of latency concerns CRLB observation windows. Consequently
+the analysis cannot expose the error contribution of estimator uncertainty
+propagated over an actuation delay, which dominates real closed-loop
+implementations at short intervals.
+\item \textbf{No closed form for the Kalman variant.} Eq.~27 covers DFPC
+only; KF-DFPC's steady state is characterized purely by simulation against
+the DFPC bound. The steady-state (Riccati) error floor of the filtered loop
+is not derived.
+\item \textbf{Oscillator model omissions.} The two-term Allan-deviation law
+captures white FM and random-walk FM but not flicker FM; phase jitter is
+drawn independently each interval rather than evolving as a continuous
+process, so intra- and inter-interval phase noise are statistically
+disconnected.
+\item \textbf{Idealized coordination plane.} Time synchronization is assumed
+complete; sample-clock offset and its accumulated timing drift are absent;
+the local broadcasts of estimates are error-free and instantaneous.
+\end{enumerate}
+
+\section{Relevance to this project}
+This is the closest published prior art to the error-floor analysis pursued
+in this repository. Its Eq.~27 anchors the framing: two of its terms
+(drift$\times$interval and estimation error) reproduce terms of our
+decomposition, so any contribution must be stated as what Eq.~27 lacks ---
+actuation latency as a parameter distinct from the update interval, coupled
+to the Kalman steady-state posterior; an analytical flicker term; a
+continuous phase-noise process; and validation by an impairment-complete
+sampled-IQ simulation rather than draws from the assumed statistics. The
+paper's $18^\circ$/90\%-gain threshold and its error-vs-update-interval
+design chart (their Fig.~10) are the natural presentation conventions to
+adopt and extend. Its consensus layer is complementary rather than
+competing: it operates above an idealized pairwise exchange, which is
+precisely the physical link our simulator models.
+
+\end{document}

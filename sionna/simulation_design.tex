@@ -1,0 +1,236 @@
+\documentclass[10pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{microtype}
+\usepackage[hidelinks]{hyperref}
+
+\newcommand{\code}[1]{\texttt{#1}}
+
+\title{One-Way Over-the-Air Carrier Phase Synchronization:\\
+Design of the \code{ota\_sync} Simulator}
+\author{Chandler Stevenson}
+\date{July 28, 2026}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+\noindent
+This document describes the architecture of the \code{ota\_sync} package, a
+sampled-IQ simulation of one-way carrier phase and frequency synchronization
+between two radios (master and slave) over an NVIDIA Sionna 3GPP TR~38.901
+channel. The slave disciplines its numerically controlled oscillator (NCO)
+using only received IQ samples. The simulator models power-law oscillator
+noise, a shared reference clock, accumulated timing drift, correlated
+shadowing, analog impairments, and correction latency, and grades every
+estimate against a noise-free oracle rather than against the receiver's own
+measurements. At the default settings the closed-loop residual is
+$\approx 70$\,mrad RMS, set by oscillator noise and control latency rather
+than by SNR.
+\end{abstract}
+
+\section{Overview}
+The package provides two models, selected by \code{simulation.py --model}.
+The \emph{ideal} model (\code{ota\_sync/core.py}) applies Sionna complex AWGN
+directly to an oscillator tone and exists as a baseline. The \emph{SDR} model
+(\code{ota\_sync/sdr.py}, the default) is the subject of this document: a
+framed preamble is transmitted through a tapped-delay-line multipath channel
+and a full analog impairment chain, and the receiver must detect the packet,
+acquire timing, estimate carrier frequency offset (CFO) and phase from raw
+IQ, and steer its NCO.
+
+Each iteration of the main loop (\code{run\_sdr\_simulation}) represents one
+synchronization interval $T$ (default 50\,ms at 1\,MS/s): the oscillators
+evolve, one frame is captured and processed, an extended Kalman filter (EKF)
+is updated, and a quantized correction is scheduled for the slave NCO.
+Defaults place the carrier at 915\,MHz over a stationary TDL-D (line-of-sight)
+channel with 100\,ns delay spread at 20\,dB SNR, with an initial CFO of
+1500\,Hz.
+
+\section{Oscillator and clock model}
+Master and slave oscillators are two-state random walks
+(\code{core.Oscillator}) in phase $\phi$ and angular frequency $\omega$:
+\begin{equation}
+\begin{bmatrix}\phi_{k+1}\\ \omega_{k+1}\end{bmatrix} =
+\begin{bmatrix}1 & T\\ 0 & 1\end{bmatrix}
+\begin{bmatrix}\phi_{k}\\ \omega_{k}\end{bmatrix} + \mathbf{w}_k ,
+\qquad \mathbf{w}_k \sim \mathcal{N}(0,\,\mathrm{diag}(\sigma_\phi^2, \sigma_\omega^2)).
+\end{equation}
+Three further noise processes complete a power-law phase-noise model:
+\begin{description}
+\item[White FM.] A per-sample phase random walk of standard deviation
+$\sigma_{\mathrm{pn}}$ (default $2\times10^{-4}$\,rad) is applied inside each
+captured frame. Its end value, plus an independent increment for the dead
+time between frames, is folded back into the oscillator state, so intra-frame
+and inter-frame phase noise form one continuous process. Over a full interval
+of $N_T$ samples this contributes phase variance
+$\sigma_{\mathrm{pn}}^2 N_T$ ($\approx 45$\,mrad RMS at defaults).
+\item[Flicker FM.] A $1/f$ frequency-noise component is approximated by a
+bank of four first-order Gauss--Markov (AR(1)) processes with log-spaced
+correlation times spanning the run (\code{\_FlickerFrequencyNoise}); the sum
+enters the true relative frequency each interval.
+\item[White PM.] Independent per-sample phase jitter (default 5\,mrad) is
+applied at the receiver.
+\end{description}
+Carrier LO and sample clock derive from one reference crystal. Unless a
+fixed override is given, the fractional sample-clock error is computed every
+interval from the \emph{physical} relative oscillator frequency---the state
+minus all accumulated NCO corrections, since digital corrections never touch
+the crystal. CFO, sample-clock offset, and frame-timing drift therefore
+co-drift, as on real SDR hardware (1500\,Hz at 915\,MHz $\Rightarrow$
+1.64\,ppm).
+
+\section{Frame structure and radio link}
+\code{make\_sync\_preamble} builds a 4606-sample frame from Zadoff--Chu (ZC)
+sequences: a short training field (length-16 ZC repeated 16 times) for
+detection and coarse CFO, followed by two cyclic-prefix-protected length-2047
+ZC long training fields for fine CFO and phase.
+
+The transmit chain (\code{SDRRadioLink.capture}) modulates the frame onto the
+master carrier, applies a soft power-amplifier limiter and DAC quantization,
+and passes it through per-interval Sionna TDL channel taps
+(\code{cir\_to\_time\_channel} / \code{ApplyTimeChannel}); with nonzero
+mobility, Sionna evolves the taps with a Jakes Doppler spectrum. A
+log-normal shadowing gain with AR(1) time correlation (2\,dB, 10\,s defaults)
+multiplies the taps. The thermal noise floor is fixed once at nominal channel
+gain, so \code{snr\_db} is the nominal link SNR and per-frame SNR genuinely
+fades.
+
+At the receiver, the clock error accumulates into frame arrival time
+($\approx0.08$ samples per interval at defaults). Whole-sample drift steps
+the arrival inside the capture window---modeling a receiver that re-centers
+its window on each detection---and the sub-sample residual is applied as a
+fractional delay in the resampler. The samples are then downconverted by the
+slave LO and pass through white-FM/white-PM phase noise, IQ gain/phase
+imbalance, AGC, DC offset, and ADC quantization.
+
+\section{Synchronizer}
+\code{SDRSynchronizer.estimate} operates on one capture:
+\begin{enumerate}
+\item \emph{Detection and coarse timing:} a normalized autocorrelation at the
+short-sequence lag; the correlation angle gives a coarse CFO estimate with
+unambiguous range $\pm f_s/(2\cdot16) = \pm31.25$\,kHz.
+\item \emph{Fine timing:} cross-correlation of the coarse-corrected window
+against the full known preamble; a normalized score below 0.25 declares a
+missed detection.
+\item \emph{Fine CFO:} the phase of the correlation between the two long
+fields, separated by 2175 samples, refines the CFO.
+\item \emph{Phase:} after full CFO correction, matched filtering against the
+long ZC sequences yields the frame phase referenced to the frame center.
+\end{enumerate}
+
+\section{Estimation and control}
+An iterated EKF (\code{core.PhaseFrequencyEKF}) tracks the relative state
+$[\phi,\omega]$ with observation
+$\mathbf{z}=[\cos\phi,\ \sin\phi,\ \omega]^\top$, avoiding phase-wrap
+discontinuities; six Gauss--Newton re-linearizations per update handle large
+innovations, and the Joseph form keeps the covariance positive semidefinite.
+The first detection initializes the state directly (acquisition), since the
+coarse+fine CFO estimate must resolve the cycle ambiguity before wrapped-phase
+tracking begins.
+
+Both filter covariances are derived from the modeled physics. The measurement
+covariance adds three terms per component: the AWGN Cram\'er--Rao bound
+($\approx1.1$\,mrad in phase at 20\,dB), the intra-frame white-FM walk
+averaged over the long fields ($\approx8$\,mrad, dominant), and the white-PM
+contribution. The process covariance adds the white-FM walk over one interval
+and the flicker innovation to the oscillator random-walk terms.
+
+Corrections are quantized (16-bit phase, 0.01\,Hz frequency) and load into
+the slave NCO only after a configurable processing latency $L$ (default one
+interval). The controller knows its latency and forward-predicts each command
+through the state transition, as a real design would. Because a command
+computed at frame $k$ acts at frame $k{+}L$, the closed loop inherits an
+irreducible error from frequency uncertainty propagated over the latency.
+
+\section{Ground-truth oracle and metrics}
+A one-way receiver observes oscillator phase \emph{plus} channel phase; the
+two are not separately identifiable, so the slave necessarily absorbs a
+stable channel-phase bias (about $-2.9$\,rad at defaults), which the raw
+oscillator residual metric exposes.
+
+Every error metric is computed against ground truth, never against the
+receiver's own measurement. Each capture is also produced along an
+\emph{oracle path}: same frame, timing, channel realization, shadowing,
+deterministic transmit hardware, and sample-clock timing, but no AWGN, phase
+noise, IQ imbalance, DC offset, or ADC quantization. Running the same
+synchronizer on the oracle capture defines the true observable OTA phase and
+frequency. This matters: grading the EKF against its own input had understated
+the phase error by a factor of $\sim$100. Reported quantities are the
+tracking error (truth minus EKF estimate), the closed-loop residual (the true
+observable phase at each capture, which already reflects every physically
+loaded command), and a steady-state RMS masked to intervals after the first
+command loads.
+
+\section{Error budget and validation}
+The steady-state closed-loop residual decomposes as
+\begin{equation}
+\sigma^2 \;\approx\; \underbrace{\sigma_{\mathrm{pn}}^2 N_T}_{\text{white-FM walk per interval}}
+\;+\; \underbrace{\big(\sigma_{\hat\omega}\, L\, T\big)^2}_{\text{freq.\ uncertainty} \times \text{latency}}
+\;+\; \underbrace{\sigma_{\mathrm{track}}^2}_{\text{measurement/tracking}},
+\end{equation}
+where $\sigma_{\hat\omega}$ is the EKF steady-state frequency posterior. The
+simulation confirms each term in isolation (100 iterations, defaults unless
+noted):
+
+\begin{center}
+\begin{tabular}{lccc}
+\toprule
+Configuration & Tracking RMSE & Closed-loop residual RMS & Dominant term \\
+\midrule
+Full defaults            & 12.0\,mrad & 69.6\,mrad & walk ($\approx45$) $\oplus$ latency ($\approx38$) \\
+No RF impairments        & 1.1\,mrad  & 34.3\,mrad & latency only \\
+Zero correction latency  & 12.3\,mrad & 12.3\,mrad & tracking only \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\noindent
+Detection is 100\% in all cases; frequency tracking RMSE is
+$\approx0.2$\,Hz. The practical implication is that beyond moderate SNR the
+achievable phase lock is set by oscillator quality, sync interval, and
+control latency---not preamble energy.
+
+\section{Coherent collaboration modes}
+Two architectures build on the sync machinery (\code{ota\_sync/coherent.py}),
+matching the two ways stations can collaborate coherently.
+
+\emph{CSI-aided joint transmission} (\code{--csi-gain}): when a user feeds
+back channel estimates, any static per-station phase bias---including the
+one-way channel-phase bias---is absorbed by CSI, so combining gain depends
+only on the \emph{differential} phase drift between refreshes. Evaluated from
+the one-way run's closed-loop residual, the two-station gain at the user
+stays above 99.5\% even with CSI refreshed only once per second.
+
+\emph{Open-loop coherence for passive detection} (\code{--model twoway}):
+with no feedback path, the inter-station channel phase must be physically
+removed. A reciprocal two-way exchange---forward and reverse frames traverse
+the same channel realization and shadowing state---cancels it: the
+half-difference of the two directional phase measurements observes the pure
+oscillator offset, making absolute carrier alignment identifiable. At
+defaults this yields an 82\,mrad steady-state oscillator residual (versus the
+$-2.9$\,rad unresolvable bias of the one-way loop) and a mean two-station
+open-loop coherent gain $\cos^2(\phi_e/2)$ of 99.8\%. Two limits are modeled
+honestly: the half-difference carries a global $\pi$ ambiguity (resolved in
+hardware by a one-time combining check), and residual TX/RX chain asymmetry
+(\code{twoway\_chain\_asymmetry\_deg}) does not cancel in a two-way exchange
+and must come from loopback calibration.
+
+\section{Usage}
+\begin{verbatim}
+python -m pip install -r requirements.txt   # sionna-no-rt==2.0.1
+python simulation.py --plot                 # phase acquisition and residual
+python simulation.py --plot-all             # full radio diagnostics
+python simulation.py --snr-db 8 --cfo-hz 10000 --tdl-model C
+python simulation.py --correction-latency 0 --no-rf-impairments
+python simulation.py --model twoway         # open-loop coherence (reciprocal)
+python simulation.py --csi-gain             # JT gain vs. CSI refresh cadence
+python -m pytest                            # 11 tests, incl. oracle consistency
+\end{verbatim}
+Key switches: \code{--sfo-ppm} forces a fixed sample-clock offset instead of
+the shared-reference derivation; \code{--flicker-std-hz} and
+\code{--shadowing-std-db} scale the flicker and shadowing processes;
+\code{--model ideal} runs the AWGN baseline.
+
+\end{document}

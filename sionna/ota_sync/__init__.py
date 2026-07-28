@@ -22,6 +22,11 @@ from .sdr import (
     make_sync_preamble,
     run_sdr_simulation,
 )
+from .coherent import (
+    TwoWaySimulationResult,
+    evaluate_csi_joint_transmission,
+    run_two_way_simulation,
+)
 
 __all__ = [
     "OTAPilotLink",
@@ -42,4 +47,7 @@ __all__ = [
     "SyncPreamble",
     "make_sync_preamble",
     "run_sdr_simulation",
+    "TwoWaySimulationResult",
+    "evaluate_csi_joint_transmission",
+    "run_two_way_simulation",
 ]
