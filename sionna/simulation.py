@@ -26,7 +26,16 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--model",
-        choices=("sdr", "twoway", "micro", "dfpc", "kfdfpc", "compare", "ideal"),
+        choices=(
+            "sdr",
+            "twoway",
+            "micro",
+            "hybrid",
+            "dfpc",
+            "kfdfpc",
+            "compare",
+            "ideal",
+        ),
         default="sdr",
         help="one-way sampled-IQ SDR model (default), reciprocal two-way "
         "sync, two-tier micro-pilot sync, Rashid & Nanzer's consensus "
@@ -38,6 +47,12 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=4,
         help="phase-only micro-pilot exchanges per interval (micro model)",
+    )
+    parser.add_argument(
+        "--anchor-every",
+        type=int,
+        default=5,
+        help="intervals between reciprocal two-way anchors (hybrid model)",
     )
     parser.add_argument(
         "--csi-gain",
@@ -458,7 +473,36 @@ def run_micro(args: argparse.Namespace) -> None:
     print(f"final CFO residual: {result.final_frequency_error_hz:.6g} Hz")
 
 
+def run_hybrid(args: argparse.Namespace) -> None:
+    from hybrid_calibration import run_hybrid_simulation
+
+    result = run_hybrid_simulation(
+        sdr_settings_from_args(args),
+        micro_pilots_per_interval=args.micro_pilots,
+        anchor_every_intervals=args.anchor_every,
+    )
+    print(
+        f"model: hybrid calibration ({args.micro_pilots} one-way micro-pilots "
+        f"per interval, two-way anchor every {args.anchor_every} intervals)"
+    )
+    print(f"device: {result.device}")
+    print(f"airtime fraction: {100.0 * result.airtime_fraction:.1f}%")
+    print(f"detection rate: {100.0 * result.detection_rate:.2f}%")
+    print(
+        "steady-state oscillator phase residual RMS: "
+        f"{result.steady_state_phase_rms:.6g} rad"
+    )
+    print(
+        "mean open-loop 2-station coherent gain: "
+        f"{100.0 * result.mean_coherent_gain:.2f}%"
+    )
+    print(f"final oscillator phase residual: {result.final_phase_error:.6g} rad")
+    print(f"final CFO residual: {result.final_frequency_error_hz:.6g} Hz")
+
+
 def run_compare(args: argparse.Namespace) -> None:
+    from hybrid_calibration import run_hybrid_simulation
+
     settings = sdr_settings_from_args(args)
     rows = []
     for label, runner in (
@@ -467,6 +511,14 @@ def run_compare(args: argparse.Namespace) -> None:
             "two-tier micro-pilot (ours)",
             lambda: run_micro_two_way_simulation(
                 settings, micro_pilots_per_interval=args.micro_pilots
+            ),
+        ),
+        (
+            "hybrid 1-way+anchors (ours)",
+            lambda: run_hybrid_simulation(
+                settings,
+                micro_pilots_per_interval=args.micro_pilots,
+                anchor_every_intervals=args.anchor_every,
             ),
         ),
         (
@@ -514,6 +566,8 @@ def main() -> None:
         run_twoway(args)
     elif args.model == "micro":
         run_micro(args)
+    elif args.model == "hybrid":
+        run_hybrid(args)
     elif args.model == "dfpc":
         run_consensus(args, "dfpc")
     elif args.model == "kfdfpc":

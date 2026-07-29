@@ -83,6 +83,17 @@ single coarse power check after lock flips the NCO by pi if the pair
 combines destructively); steady-state metrics are masked to start after
 that calibration.
 
+## Hybrid one-way/two-way calibration (`hybrid_calibration/`)
+
+A joint 3-state EKF over [oscillator phase, frequency, channel phase]
+separates fast power-law clock noise from slow channel dynamics: cheap
+one-way pilots observe the sum at high cadence, sparse reciprocal anchors
+(every K intervals) observe the components separately and re-pin the
+split. `python simulation.py --model hybrid --anchor-every K`. On a static
+channel the residual is flat from K=1 to K=20 (~33 mrad) while airtime
+falls to 13.5% -- reciprocity cadence is set by channel coherence, not
+oscillator quality. See `hybrid_calibration/README.md`.
+
 ## Comparison with Rashid & Nanzer (IEEE TWC 2023)
 
 `ota_sync/dfpc.py` implements their DFPC and KF-DFPC algorithms twice: a

@@ -270,6 +270,44 @@ def test_micro_pilot_loop_beats_plain_two_way():
     assert micro.airtime_fraction < 0.35
 
 
+def test_hybrid_calibration_matches_micro_at_much_lower_airtime():
+    from hybrid_calibration import run_hybrid_simulation
+
+    settings = SDRSimulationConfig(num_iterations=40, seed=0, device="cpu")
+    baseline = run_two_way_simulation(settings)
+    hybrid = run_hybrid_simulation(
+        settings, micro_pilots_per_interval=4, anchor_every_intervals=5
+    )
+
+    assert hybrid.detection_rate == 1.0
+    # One-way micro-pilots plus sparse reciprocal anchors must beat the
+    # plain two-way loop on residual while spending less airtime than it.
+    assert hybrid.steady_state_phase_rms < 0.6 * baseline.steady_state_phase_rms
+    assert hybrid.airtime_fraction < 0.16
+    assert hybrid.mean_coherent_gain > 0.999
+
+
+def test_hybrid_doppler_requires_matched_channel_prior():
+    from hybrid_calibration import run_hybrid_simulation
+
+    settings = SDRSimulationConfig(
+        num_iterations=40, seed=0, device="cpu", channel_speed_mps=0.5
+    )
+    mismatched = run_hybrid_simulation(
+        settings, anchor_every_intervals=5, channel_drift_std_rad=0.01
+    )
+    matched = run_hybrid_simulation(
+        settings, anchor_every_intervals=5, channel_drift_std_rad=0.48
+    )
+
+    # Under channel Doppler the split between oscillator and channel phase
+    # rests on the process priors: a static-channel prior lets the filter
+    # chase the channel with NCO corrections, while a matched prior keeps
+    # the oscillator residual usable at the same sparse anchor cadence.
+    assert matched.steady_state_phase_rms < 0.5 * mismatched.steady_state_phase_rms
+    assert matched.mean_coherent_gain > 0.95
+
+
 def test_csi_joint_transmission_gain_degrades_with_stale_csi():
     result = run_sdr_simulation(
         SDRSimulationConfig(num_iterations=60, seed=3, device="cpu")
