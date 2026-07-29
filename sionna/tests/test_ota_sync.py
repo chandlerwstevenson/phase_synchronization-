@@ -3,11 +3,14 @@ import math
 import torch
 
 from ota_sync import (
+    ConsensusStatsConfig,
     PilotReceiver,
     SDRSimulationConfig,
     SimulationConfig,
     evaluate_csi_joint_transmission,
     make_sync_preamble,
+    run_consensus_ota_simulation,
+    run_consensus_stats,
     run_sdr_simulation,
     run_simulation,
     run_two_way_simulation,
@@ -194,6 +197,77 @@ def test_two_way_clean_loop_reaches_estimation_floor():
     assert result.detection_rate == 1.0
     assert abs(result.final_phase_error) < 0.1
     assert result.mean_coherent_gain > 0.99
+
+
+def test_consensus_stats_converges_and_respects_eq27_bound():
+    settings = ConsensusStatsConfig(
+        num_nodes=20, connectivity=0.2, num_iterations=150, seed=1
+    )
+    dfpc = run_consensus_stats(settings)
+
+    # Initial spread is ~100 ppm of 1 GHz; consensus must collapse it by
+    # orders of magnitude, and the paper's Eq. 27 upper-bounds the residual
+    # for sparse graphs (moderate connectivity sits below the bound).
+    assert dfpc.frequency_spread_hz[-1] < 1e-2 * dfpc.frequency_spread_hz[0]
+    assert dfpc.final_phase_error_std < 1.5 * dfpc.eq27_bound_rad
+
+
+def test_consensus_stats_kalman_variant_reduces_residual():
+    base = dict(num_nodes=20, connectivity=0.2, num_iterations=150, seed=1)
+    dfpc = run_consensus_stats(ConsensusStatsConfig(algorithm="dfpc", **base))
+    kf = run_consensus_stats(ConsensusStatsConfig(algorithm="kf-dfpc", **base))
+
+    tail = slice(100, None)
+    assert torch.mean(kf.total_phase_error_std[tail]) < torch.mean(
+        dfpc.total_phase_error_std[tail]
+    )
+
+
+def test_naive_consensus_ota_captures_at_anti_phase():
+    result = run_consensus_ota_simulation(
+        SDRSimulationConfig(num_iterations=25, seed=0, device="cpu"),
+        "dfpc",
+        reciprocal=False,
+    )
+
+    # The paper's channel-free assumption makes naive OTA consensus
+    # bistable: wrapped symmetric updates converge to relative phase 0 or
+    # pi depending on the channel-phase realization. Seed 0 (channel phase
+    # about -2.9 rad against a 1.2 rad initial offset) wraps on the first
+    # update and locks at the anti-phase fixed point.
+    assert result.detection_rate == 1.0
+    assert result.steady_state_phase_rms > 1.5
+    assert result.mean_coherent_gain < 0.3
+
+
+def test_reciprocal_consensus_ota_aligns_and_filtering_helps():
+    settings = SDRSimulationConfig(num_iterations=25, seed=3, device="cpu")
+    dfpc = run_consensus_ota_simulation(settings, "dfpc")
+    kf = run_consensus_ota_simulation(settings, "kf-dfpc")
+
+    assert dfpc.detection_rate == 1.0
+    # With the exchanged half-difference the channel phase cancels and the
+    # pair genuinely aligns.
+    assert dfpc.steady_state_phase_rms < 0.6
+    assert kf.steady_state_phase_rms < 0.4
+    # The paper's own claim, reproduced over a physical link: filtering
+    # reduces the residual relative to raw consensus.
+    assert kf.steady_state_phase_rms < dfpc.steady_state_phase_rms
+
+
+def test_micro_pilot_loop_beats_plain_two_way():
+    from ota_sync import run_micro_two_way_simulation
+
+    settings = SDRSimulationConfig(num_iterations=40, seed=0, device="cpu")
+    baseline = run_two_way_simulation(settings)
+    micro = run_micro_two_way_simulation(settings, micro_pilots_per_interval=4)
+
+    assert micro.detection_rate == 1.0
+    # Re-measuring phase 5x per interval cuts the walk and staleness terms;
+    # the residual should improve by well over 2x at modest extra airtime.
+    assert micro.steady_state_phase_rms < 0.5 * baseline.steady_state_phase_rms
+    assert micro.mean_coherent_gain > 0.999
+    assert micro.airtime_fraction < 0.35
 
 
 def test_csi_joint_transmission_gain_degrades_with_stale_csi():

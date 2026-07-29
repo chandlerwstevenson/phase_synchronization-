@@ -64,6 +64,42 @@ two ways base stations can collaborate coherently:
   and residual TX/RX chain asymmetry (`twoway_chain_asymmetry_deg`) does not
   cancel and must come from loopback calibration.
 
+## Two-tier micro-pilot synchronization
+
+The closed-loop floor of the plain two-way loop is set by correction
+cadence, not SNR: the LO walk accumulated over the dead time between frames
+plus frequency uncertainty propagated over correction staleness.
+`ota_sync/microsync.py` therefore adds a second tier: the full two-way
+frame (detection, timing, CFO) runs once per interval, while short
+reciprocal phase-only micro-pilots (a CP-protected ZC-255, ~0.3 ms,
+estimated in tracking mode with no detection preamble) are exchanged at
+evenly spaced sub-intervals, with corrections issued every sub-interval.
+`python simulation.py --model micro --micro-pilots N`. Measured trade at
+defaults (steady-state residual vs. airtime): 71 mrad at 19% (N=0), 35 at
+23%, 28 at 26% (N=4), 23 at 35% (N=9) -- about 3x tighter lock than the
+plain loop for ~7% more airtime. The global pi ambiguity of two-way
+acquisition is resolved by a modeled one-time combining calibration (a
+single coarse power check after lock flips the NCO by pi if the pair
+combines destructively); steady-state metrics are masked to start after
+that calibration.
+
+## Comparison with Rashid & Nanzer (IEEE TWC 2023)
+
+`ota_sync/dfpc.py` implements their DFPC and KF-DFPC algorithms twice: a
+faithful statistics-level reproduction of their Algorithms 1-2 (N nodes,
+Metropolis-Hastings mixing, their error model, validated against their
+Eq. 27 bound), and a two-node adaptation running their consensus update
+rule over this repository's physical layer. `python simulation.py --model
+compare` runs the head-to-head under identical conditions. Findings at
+defaults: applied naively (their channel-free measurement assumption), the
+wrapped symmetric consensus is bistable over a real channel and can capture
+at anti-phase (residual pi, ~0% coherent gain); with a reciprocity
+correction using their assumed side channel, DFPC reaches ~153 mrad
+(unfiltered measurement noise feeds the NCO directly) and KF-DFPC ~83 mrad,
+statistically identical to our two-way EKF (~82 mrad) -- reproducing their
+claim that filtering helps, while quantifying the physical-layer penalty
+their statistics-level model cannot see.
+
 ## Run
 
 Python 3.11 or newer and PyTorch 2.9.1 or newer are required by Sionna 2.

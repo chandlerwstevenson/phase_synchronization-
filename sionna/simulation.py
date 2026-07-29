@@ -12,6 +12,8 @@ from ota_sync import (
     SDRSimulationResult,
     SimulationConfig,
     evaluate_csi_joint_transmission,
+    run_consensus_ota_simulation,
+    run_micro_two_way_simulation,
     run_sdr_simulation,
     run_simulation,
     run_two_way_simulation,
@@ -24,10 +26,18 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--model",
-        choices=("sdr", "twoway", "ideal"),
+        choices=("sdr", "twoway", "micro", "dfpc", "kfdfpc", "compare", "ideal"),
         default="sdr",
         help="one-way sampled-IQ SDR model (default), reciprocal two-way "
-        "sync for open-loop coherence, or the ideal AWGN model",
+        "sync, two-tier micro-pilot sync, Rashid & Nanzer's consensus "
+        "algorithms over the physical layer (dfpc/kfdfpc), a side-by-side "
+        "comparison of all open-loop approaches, or the ideal AWGN model",
+    )
+    parser.add_argument(
+        "--micro-pilots",
+        type=int,
+        default=4,
+        help="phase-only micro-pilot exchanges per interval (micro model)",
     )
     parser.add_argument(
         "--csi-gain",
@@ -408,12 +418,108 @@ def run_twoway(args: argparse.Namespace) -> None:
     print(f"final CFO residual: {result.final_frequency_error_hz:.6g} Hz")
 
 
+def run_consensus(args: argparse.Namespace, algorithm: str) -> None:
+    result = run_consensus_ota_simulation(sdr_settings_from_args(args), algorithm)
+    print(f"model: {algorithm} over the sampled-IQ physical layer (2 nodes)")
+    print(f"device: {result.device}")
+    print(f"detection rate (both directions): {100.0 * result.detection_rate:.2f}%")
+    print(
+        "steady-state oscillator phase residual RMS: "
+        f"{result.steady_state_phase_rms:.6g} rad"
+    )
+    print(
+        "mean open-loop 2-station coherent gain: "
+        f"{100.0 * result.mean_coherent_gain:.2f}%"
+    )
+    print(f"final oscillator phase residual: {result.final_phase_error:.6g} rad")
+    print(f"final CFO residual: {result.final_frequency_error_hz:.6g} Hz")
+
+
+def run_micro(args: argparse.Namespace) -> None:
+    result = run_micro_two_way_simulation(
+        sdr_settings_from_args(args), micro_pilots_per_interval=args.micro_pilots
+    )
+    print(
+        f"model: two-tier reciprocal sync ({args.micro_pilots} micro-pilots "
+        "per interval)"
+    )
+    print(f"device: {result.device}")
+    print(f"airtime fraction: {100.0 * result.airtime_fraction:.1f}%")
+    print(f"detection rate: {100.0 * result.detection_rate:.2f}%")
+    print(
+        "steady-state oscillator phase residual RMS: "
+        f"{result.steady_state_phase_rms:.6g} rad"
+    )
+    print(
+        "mean open-loop 2-station coherent gain: "
+        f"{100.0 * result.mean_coherent_gain:.2f}%"
+    )
+    print(f"final oscillator phase residual: {result.final_phase_error:.6g} rad")
+    print(f"final CFO residual: {result.final_frequency_error_hz:.6g} Hz")
+
+
+def run_compare(args: argparse.Namespace) -> None:
+    settings = sdr_settings_from_args(args)
+    rows = []
+    for label, runner in (
+        ("two-way EKF (ours)", lambda: run_two_way_simulation(settings)),
+        (
+            "two-tier micro-pilot (ours)",
+            lambda: run_micro_two_way_simulation(
+                settings, micro_pilots_per_interval=args.micro_pilots
+            ),
+        ),
+        (
+            "DFPC naive (as published)",
+            lambda: run_consensus_ota_simulation(settings, "dfpc", reciprocal=False),
+        ),
+        (
+            "DFPC + reciprocity",
+            lambda: run_consensus_ota_simulation(settings, "dfpc"),
+        ),
+        (
+            "KF-DFPC + reciprocity",
+            lambda: run_consensus_ota_simulation(settings, "kf-dfpc"),
+        ),
+    ):
+        result = runner()
+        rows.append(
+            (
+                label,
+                result.steady_state_phase_rms,
+                result.mean_coherent_gain,
+                result.detection_rate,
+            )
+        )
+    print("open-loop synchronization comparison (identical physical conditions)")
+    print(f"{'approach':<27}{'phase RMS (mrad)':>18}{'coherent gain':>15}{'detect':>9}")
+    for label, rms, gain, detect in rows:
+        print(
+            f"{label:<27}{1e3 * rms:>18.1f}{100.0 * gain:>14.2f}%{100.0 * detect:>8.0f}%"
+        )
+    print(
+        "note: naive DFPC consenses on raw one-way measurements (the paper's\n"
+        "channel-free assumption); over a real channel the wrapped symmetric\n"
+        "update is bistable and can capture at the anti-phase fixed point,\n"
+        "as it does for this channel realization. The reciprocity rows\n"
+        "exchange measurements over the paper's assumed side channel."
+    )
+
+
 def main() -> None:
     args = parse_args()
     if args.model == "ideal":
         run_ideal(args)
     elif args.model == "twoway":
         run_twoway(args)
+    elif args.model == "micro":
+        run_micro(args)
+    elif args.model == "dfpc":
+        run_consensus(args, "dfpc")
+    elif args.model == "kfdfpc":
+        run_consensus(args, "kf-dfpc")
+    elif args.model == "compare":
+        run_compare(args)
     else:
         run_sdr(args)
 

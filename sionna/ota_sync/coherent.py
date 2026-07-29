@@ -60,6 +60,7 @@ class TwoWaySimulationResult:
     coherent_gain: torch.Tensor
     detected: torch.Tensor
     correction_active: torch.Tensor
+    calibrated: torch.Tensor
     device: torch.device
 
     @property
@@ -75,7 +76,7 @@ class TwoWaySimulationResult:
 
     @property
     def steady_state_phase_rms(self) -> float:
-        valid = self.detected & self.correction_active
+        valid = self.detected & self.correction_active & self.calibrated
         if not torch.any(valid):
             return float("nan")
         return torch.sqrt(
@@ -84,7 +85,7 @@ class TwoWaySimulationResult:
 
     @property
     def mean_coherent_gain(self) -> float:
-        valid = self.detected & self.correction_active
+        valid = self.detected & self.correction_active & self.calibrated
         if not torch.any(valid):
             return float("nan")
         return torch.mean(self.coherent_gain[valid]).item()
@@ -201,6 +202,8 @@ def run_two_way_simulation(
     slave_frequency_corrections = torch.zeros((), dtype=REAL_DTYPE, device=device)
     correction_has_loaded = False
     acquired = False
+    settled_corrections = 0
+    pi_calibrated = False
 
     history: dict[str, list[torch.Tensor]] = {
         name: []
@@ -217,6 +220,7 @@ def run_two_way_simulation(
             "coherent_gain",
             "detected",
             "correction_active",
+            "calibrated",
         )
     }
 
@@ -235,6 +239,23 @@ def run_two_way_simulation(
                 slave_frequency_corrections + due_correction[1]
             )
             correction_has_loaded = True
+
+        # One-time pi-ambiguity calibration: a deployment checks once after
+        # lock whether the pair combines destructively (a single coarse
+        # power measurement) and flips the NCO by pi if so.
+        if correction_has_loaded and not pi_calibrated:
+            settled_corrections += 1
+            if settled_corrections >= 3:
+                if torch.cos(master.state[0] - slave.state[0]) < 0.0:
+                    # The half-difference measurement is invariant under pi
+                    # shifts, so the filter needs no reset: its near-zero
+                    # state re-attaches to the true branch after the flip.
+                    slave.apply_correction(
+                        torch.tensor(
+                            [math.pi, 0.0], dtype=REAL_DTYPE, device=device
+                        )
+                    )
+                pi_calibrated = True
 
         if settings.sample_clock_offset_ppm is not None:
             sfo_forward = settings.sample_clock_offset_ppm
@@ -337,6 +358,9 @@ def run_two_way_simulation(
 
         history["correction_active"].append(
             torch.tensor(correction_has_loaded, dtype=torch.bool, device=device)
+        )
+        history["calibrated"].append(
+            torch.tensor(pi_calibrated, dtype=torch.bool, device=device)
         )
         residual_state = master.state - slave.state
         residual_phase = wrap_phase(residual_state[0])

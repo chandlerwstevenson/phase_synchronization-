@@ -27,6 +27,15 @@ from .coherent import (
     evaluate_csi_joint_transmission,
     run_two_way_simulation,
 )
+from .dfpc import (
+    ConsensusOTAResult,
+    ConsensusStatsConfig,
+    ConsensusStatsResult,
+    dfpc_total_phase_error_bound,
+    run_consensus_ota_simulation,
+    run_consensus_stats,
+)
+from .microsync import MicroSyncResult, run_micro_two_way_simulation
 
 __all__ = [
     "OTAPilotLink",
@@ -50,4 +59,12 @@ __all__ = [
     "TwoWaySimulationResult",
     "evaluate_csi_joint_transmission",
     "run_two_way_simulation",
+    "ConsensusOTAResult",
+    "ConsensusStatsConfig",
+    "ConsensusStatsResult",
+    "dfpc_total_phase_error_bound",
+    "run_consensus_ota_simulation",
+    "run_consensus_stats",
+    "MicroSyncResult",
+    "run_micro_two_way_simulation",
 ]

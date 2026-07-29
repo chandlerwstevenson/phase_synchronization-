@@ -391,11 +391,13 @@ class SDRRadioLink:
         device: torch.device,
         generator: torch.Generator,
         mirror_of: "SDRRadioLink | None" = None,
+        captures_per_interval: int = 1,
     ) -> None:
         self.settings = settings
         self.preamble = preamble
         self.device = device
         self.generator = generator
+        self.captures_per_interval = captures_per_interval
         # A mirrored link models the reverse direction of a reciprocal
         # channel: it shares the taps and shadowing of the forward link (which
         # must capture first each interval) while keeping its own receiver
@@ -502,7 +504,9 @@ class SDRRadioLink:
         # Clock error accumulates between frames. The receiver re-centers its
         # window on each detection, so whole-sample drift steps the insertion
         # point while the sub-sample residual remains as a fractional delay.
-        self._timing_carry += sfo_ppm * 1e-6 * self.interval_samples
+        self._timing_carry += (
+            sfo_ppm * 1e-6 * self.interval_samples / self.captures_per_interval
+        )
         drift_step = int(round(self._timing_carry))
         self._timing_carry -= drift_step
         fractional_delay = self._timing_carry
