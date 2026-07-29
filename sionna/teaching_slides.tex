@@ -1,0 +1,1587 @@
+\documentclass[10pt]{beamer}
+\usetheme{Boadilla}
+\usecolortheme{seahorse}
+\setbeamertemplate{navigation symbols}{}
+\setbeamertemplate{itemize items}[circle]
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\newcommand{\code}[1]{\texttt{#1}}
+\newcommand{\wrapop}{\operatorname{wrap}}
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\RN}[1]{\textcolor{blue!50!black}{[RN23#1]}}
+\newcommand{\proj}[1]{\textcolor{green!35!black}{[proj#1]}}
+\newcommand{\srcline}[1]{\par\vfill\noindent{\tiny\textcolor{gray}{Source: #1}}}
+
+\title[OTA Carrier Phase Sync]{Over-the-Air Carrier Phase Synchronization\\ for Distributed Arrays}
+\subtitle{A lecture: foundations, the reference paper, and this project}
+\author[C.~Stevenson]{Chandler Stevenson}
+\institute[]{\footnotesize Reference paper [RN23]:\\
+M.~Rashid and J.~A.~Nanzer, ``Frequency and Phase Synchronization in
+Distributed\\ Antenna Arrays Based on Consensus Averaging and Kalman
+Filtering,''\\
+\emph{IEEE Trans.\ Wireless Commun.}, vol.~22, no.~4, pp.~2789--2802,
+Apr.~2023.\\ DOI 10.1109/TWC.2022.3213788}
+\date{July 29, 2026}
+
+\begin{document}
+
+\begin{frame}
+\titlepage
+\end{frame}
+
+\begin{frame}{The problem in one paragraph}
+Two radio stations, A and B, each generate a 915\,MHz carrier from their
+own crystal oscillator. We want their two carriers to hold a fixed,
+known phase relationship --- within a few degrees --- so that their
+signals add constructively at a distant point, or so that what the two
+stations \emph{receive} can be combined coherently.
+\vspace{2ex}
+\begin{itemize}
+\item The two crystals disagree, and their disagreement drifts randomly.
+\item The only connection between the stations is radio itself.
+\item So station B must continuously measure its offset from A
+\emph{over the air} and steer its own electronics to cancel it.
+\end{itemize}
+\vspace{2ex}
+Everything in this lecture is about how well that can be done, what
+fundamentally limits it, and how the reference paper and this project
+each attack it.
+\end{frame}
+
+\begin{frame}{Roadmap and attribution}
+\begin{enumerate}
+\item \textbf{Foundations} (21 slides) --- built up slowly; classical sources named per slide
+\item \textbf{The reference paper} \RN{} (14 slides) --- its model, algorithms, derivation, and results taught with its own equation/figure numbers
+\item \textbf{This project} \proj{} (19 slides) --- tools and method first, then every number names the command that regenerates it
+\end{enumerate}
+\vspace{1ex}
+\begin{block}{Tags}
+\RN{, Eq.~27} $=$ the paper, that equation.\quad
+\proj{: \code{--model compare}} $=$ measured here, by that command.\quad
+Named citations $=$ classical results.
+\end{block}
+\srcline{Companion with full derivations: \code{teaching\_document.pdf} (same numbers, same order).}
+\end{frame}
+
+%=====================================================
+\section{Foundations}
+
+\begin{frame}{1.0\quad Vocabulary for the whole lecture}
+\small
+\begin{description}
+\item[Carrier / phase] A radio transmits a pure high-frequency sine wave
+(here 915 million cycles per second) and imprints information on it.
+\emph{Phase} is where in its cycle the wave is right now --- an angle,
+one full cycle $=2\pi$ radians $=360^\circ$.
+\item[Units] 1\,rad $=57.3^\circ$; \ 1\,mrad $=0.057^\circ$ (so
+``28\,mrad'' means ``$1.6^\circ$''). \ Decibels compare powers on a log
+scale: 20\,dB $=100\times$; ``20\,dB SNR'' means the signal is
+$100\times$ stronger than the noise.
+\item[Baseband / IQ samples] The receiver strips off the fast carrier
+and keeps, at each sampling instant, one \emph{complex number} whose
+angle is the received phase and whose magnitude is the strength. All
+digital processing operates on these ``IQ samples.''
+\item[Channel] Everything between the antennas: the travel delay plus
+reflections off objects (\emph{multipath}). At one frequency its net
+effect is a single complex multiplier --- a gain and a phase shift
+$\phi_c$. \textbf{AWGN}: the electronic hiss every receiver adds,
+modeled as Gaussian noise.
+\item[Pilot / correlation] A \emph{pilot} is a pre-agreed known
+waveform used for measurement. \emph{Correlating} means sliding the
+known pattern along the received samples, multiplying and summing: the
+result peaks when aligned, and the peak's \emph{angle} is the received
+phase.
+\end{description}
+\srcline{Standard definitions; kept on one slide so later slides can use the words freely.}
+\end{frame}
+
+\begin{frame}{1.1\quad Two waves adding: where the requirement comes from}
+A wave of one fixed frequency is completely described by an arrow (a
+\emph{phasor}): length $=$ amplitude, angle $=$ phase; written as a
+complex number the arrow is $e^{j\phi}$. Two waves arriving at the same
+point add as arrows, so two equal-strength carriers give a sum that
+depends only on the angle between them:
+\[
+|1+e^{j\Delta\phi}|^2 \;=\; (1{+}\cos\Delta\phi)^2+\sin^2\Delta\phi
+\;=\; 2+2\cos\Delta\phi \;=\; 4\cos^2\!\big(\tfrac{\Delta\phi}{2}\big)
+\]
+\begin{itemize}
+\item $\Delta\phi=0$: the phasors line up; power is $4\times$ one
+transmitter. Two transmitters, four times the power --- the extra factor
+is the point of coherence. With $N$ elements: $N^2$.
+\item $\Delta\phi=\pi$: the phasors oppose; the sum is \emph{zero}.
+Being wrong by half a carrier cycle is worse than transmitting alone.
+\end{itemize}
+\vspace{1ex}
+We will use $G=\cos^2(\Delta\phi/2)$, the fraction of ideal two-element
+gain, as the scorecard for every scheme in this lecture.
+\srcline{Elementary phasor arithmetic.}
+\end{frame}
+
+\begin{frame}{1.2\quad How much phase error is tolerable?}
+Let each element's phase error $\phi_n$ be random, zero-mean, Gaussian
+with standard deviation $\sigma$. The mean of a unit phasor with jittered
+angle is shorter than 1:
+\[
+\E[e^{j\phi_n}]=e^{-\sigma^2/2}
+\quad\Longrightarrow\quad
+\text{mean coherent power}\;\approx\;N^2\,e^{-\sigma^2}.
+\]
+Why the average arrow is shorter: wobbling the angle moves the arrow
+mostly \emph{sideways}, and sideways excursions average to zero. But the
+forward component is $\cos\phi_n$, which is $\le1$ for every wobble, so
+its average only loses: $\E[\cos\phi_n]\approx1-\sigma^2/2$ for small
+errors --- which is $e^{-\sigma^2/2}$. Each element still radiates full
+power; the \emph{resultant} shrinks by that factor per element, hence
+$e^{-\sigma^2}$ on power.
+\vspace{1ex}
+\begin{block}{The working threshold}
+$\sigma=18^\circ=0.314$\,rad $\Rightarrow e^{-\sigma^2}=0.906$: with
+$18^\circ$ RMS phase error an array keeps ${\ge}90\%$ of ideal gain.
+This is the standard bar in the distributed-array literature.
+\end{block}
+For reference: $18^\circ=314$\,mrad. The loops later in this lecture
+reach 23--82\,mrad --- comfortably inside.
+\srcline{Threshold: Nanzer et al., IEEE TMTT 65(5), 2017 --- [RN23]'s reference [4], used throughout it.}
+\end{frame}
+
+\begin{frame}{1.3\quad Why this is hard: the scale of a carrier cycle}
+\begin{itemize}
+\item At 915\,MHz one carrier period is 1.09\,ns. A timing disagreement
+of \textbf{1\,ns} between stations is $0.915$ of a cycle $=329^\circ$ of
+phase --- more than a full tolerance budget, from one nanosecond.
+\item Crystals are specified in parts per million. A \textbf{1\,ppm}
+frequency error at 915\,MHz is 915\,Hz: the relative phase sweeps
+through a \emph{full cycle every 1.09\,ms}.
+\item So ``synchronize once'' is meaningless. The relative phase must be
+measured and corrected \emph{continuously}, and the interesting question
+becomes: what is the steady-state error of that loop?
+\end{itemize}
+\vspace{1ex}
+Also note what coherent \emph{reception} needs: when two stations
+receive the same signal from a passive source, the source's phase is
+common to both and cancels when combining. What does not cancel is the
+phase between the two stations' local oscillators. Station-to-station
+sync is the whole requirement.
+\srcline{Arithmetic from the carrier frequency; sensing observation: standard.}
+\end{frame}
+
+\begin{frame}{2.1\quad Modeling an oscillator}
+An oscillator's deviation from its nominal frequency is described by two
+numbers that evolve in time: a phase offset $\phi$ (rad) and a frequency
+offset $\omega$ (rad/s). Between correction epochs spaced $T$ apart,
+phase integrates frequency, and both get kicked by noise:
+\[
+\begin{bmatrix}\phi_{k+1}\\ \omega_{k+1}\end{bmatrix}
+=\begin{bmatrix}1 & T\\ 0 & 1\end{bmatrix}
+\begin{bmatrix}\phi_{k}\\ \omega_{k}\end{bmatrix}+\mathbf w_k .
+\]
+\begin{itemize}
+\item The matrix says: new phase $=$ old phase $+$ $T\times$frequency;
+frequency persists. This deterministic part is easy --- a controller can
+predict and cancel it.
+\item Everything difficult lives in $\mathbf w_k$: the random component
+of real oscillator behavior. The next three slides unpack it.
+\end{itemize}
+\srcline{Standard clock model; used identically in [RN23] Eq.~28 and in this project.}
+\end{frame}
+
+\begin{frame}{2.2\quad The dominant noise: white FM $=$ a random walk in phase}
+``White FM'' means the oscillator's \emph{frequency} jitters
+independently from sample to sample. Phase is the integral of frequency,
+so phase takes a small independent random step each sample --- a random
+walk. If each step has standard deviation $\sigma_{\mathrm{pn}}$ at
+sample rate $f_s$:
+\[
+\operatorname{var}\bigl(\phi(t)-\phi(0)\bigr)
+=\sigma_{\mathrm{pn}}^2 f_s\,t \;\equiv\; k\,t
+\qquad\text{(variance grows linearly in time)} .
+\]
+\begin{alertblock}{Why this sets a floor no algorithm can beat}
+A random walk has \emph{independent increments}: the steps taken after
+your last measurement are statistically unrelated to everything you
+observed before it. Whatever the walk accumulates between corrections
+is therefore \textbf{unpredictable}, and a loop that corrects every $T$
+seconds carries at least $kT$ of phase variance. More SNR, better
+estimators, smarter filters --- none of it touches this term. Only a
+quieter oscillator or a shorter $T$ does.
+\end{alertblock}
+\proj{} default: $\sigma_{\mathrm{pn}}=2\times10^{-4}$\,rad/sample at
+1\,MS/s $\Rightarrow k=0.04$\,rad$^2$/s $\Rightarrow \sqrt{kT}=45$\,mrad
+at $T=50$\,ms. Remember this number.
+\srcline{Random-walk properties: standard. Parameter: \code{ota\_sync/sdr.py} defaults.}
+\end{frame}
+
+\begin{frame}{2.3\quad The other noise types}
+\begin{center}
+\small
+\begin{tabular}{llll}
+\toprule
+type & what it is & effect & ADEV\\
+\midrule
+white PM & i.i.d.\ jitter per phase sample & averages away as $1/L$ & $\tau^{-1}$\\
+white FM & random-walk phase (prev.\ slide) & the $kT$ floor & $\tau^{-1/2}$\\
+flicker FM & $1/f$ frequency noise & slow wander, no exact model & $\tau^{0}$\\
+RW FM & random walk \emph{in frequency} & aging, temperature & $\tau^{+1/2}$\\
+\bottomrule
+\end{tabular}
+\end{center}
+\begin{itemize}
+\item \textbf{White PM}: the phase \emph{reading} jitters but nothing
+accumulates --- averaging many samples suppresses it. It matters only
+inside individual measurements, never for long-term tracking.
+\item \textbf{Flicker FM}: frequency noise with a $1/f$ spectrum ---
+equal noise power per \emph{decade} of timescale, so it neither
+averages away nor settles into a clean random walk. No exact
+finite-state model exists; the standard surrogate is a sum of a few
+first-order low-pass (AR(1)) processes with time constants spread
+across the timescales of interest, whose summed spectra approximate
+$1/f$.
+\item \textbf{Random-walk FM}: the frequency itself wanders
+(temperature, aging), so phase \emph{accelerates} away --- the reason
+frequency must be tracked as its own state, not inferred from phase
+alone.
+\end{itemize}
+\srcline{Taxonomy: IEEE Std 1139.}
+\end{frame}
+
+\begin{frame}{2.4\quad Grading oscillators: the Allan deviation}
+Ordinary variance fails for clocks: a drifting oscillator's frequency
+has no settled mean, so ``the variance of $y$'' just grows with how
+long you watch. The field's fix is the \textbf{Allan deviation}
+$\sigma_y(\tau)$:
+\begin{enumerate}
+\item Take the fractional frequency $y=\dot\phi/(2\pi f_c)$
+(dimensionless --- ``parts in $10^{11}$'' language).
+\item Average it over consecutive windows of length $\tau$.
+\item $\sigma_y(\tau)$ $=$ the typical difference between
+\emph{successive} window averages (divided by $\sqrt2$).
+\end{enumerate}
+Differencing neighboring windows cancels slow drift, so the statistic
+converges --- and each noise type leaves its own slope vs.\ $\tau$
+(previous slide's table), making an ADEV plot a fingerprint of the
+noise mix.
+\begin{block}{How to read the number used throughout this lecture}
+$\sigma_y(1\,\mathrm s)=3.5\times10^{-11}$ means: two successive
+1-second frequency averages typically differ by 3.5 parts in $10^{11}$
+--- at 915\,MHz, by 0.032\,Hz. Grades: \textbf{TCXO}
+(temperature-compensated crystal, the few-dollar part in most radios)
+sits at $\sigma_y\sim10^{-9}$--$10^{-10}$; \textbf{OCXO} (crystal kept
+in a small oven) is 10--100$\times$ steadier but bigger, costlier,
+power-hungry. \proj{} default sits between: realistic, not exotic.
+\end{block}
+\srcline{ADEV: IEEE Std 1139.}
+\end{frame}
+
+\begin{frame}{2.5\quad One crystal, three synchronized errors}
+Inside a radio, the carrier synthesizer \emph{and} the ADC/DAC sample
+clock are both multiplied up from the same reference crystal. So if the
+reference runs fractionally fast by $y$, three things happen at once:
+\[
+\underbrace{\text{CFO}=f_c\,y}_{\text{carrier high}}\qquad
+\underbrace{\text{SFO}=10^6 y\ \text{ppm}}_{\text{samples too fast}}\qquad
+\underbrace{\text{timing drift}=y f_s T\ \text{samples per interval}}_{\text{frames arrive early/late}}
+\]
+At the \proj{} defaults, an initial CFO of 1500\,Hz at 915\,MHz means
+$y=1.64\times10^{-6}$, hence 1.64\,ppm of SFO and 0.082 samples of frame
+drift per 50\,ms --- \textbf{one} random process seen three ways, moving
+together as the crystal wanders.
+\vspace{1ex}
+\begin{itemize}
+\item A faithful simulation must derive all three from one process
+(many models set them independently --- then they decorrelate, which
+real hardware cannot do).
+\item A digital correction (an NCO, introduced shortly) shifts the
+\emph{baseband} phase/frequency; it does not touch the crystal. The
+physical SFO and timing drift continue regardless of corrections.
+\end{itemize}
+\srcline{Shared-reference architecture: standard SDR design; modeled in \code{ota\_sync/sdr.py}.}
+\end{frame}
+
+\begin{frame}{3.1\quad Measuring a phase: the pilot and the bound}
+Station A transmits a \emph{pilot}: a waveform B knows in advance. B
+receives $L$ samples $r_n=e^{j\phi}s_n+w_n$ (known $s_n$, noise $w_n$)
+and asks: what is $\phi$? Correlating $r$ against $s$ and taking the
+angle is the maximum-likelihood answer.
+\vspace{1ex}
+How good can any estimator be? The Cram\'er--Rao lower bound (CRLB) is
+the information-theoretic answer. Intuition: plot how probable the
+observed data is as a function of the assumed $\phi$ --- a curve peaking
+near the true value. The \emph{sharper} that peak, the more precisely
+the data pins $\phi$ down; ``Fisher information'' is exactly that
+sharpness (the curvature at the peak), and no unbiased method can have
+variance smaller than its inverse:
+\[
+\operatorname{var}(\hat\phi)\;\ge\;\frac{1}{2\,\mathrm{SNR}\,L}.
+\]
+Each extra sample and each dB of SNR steepen the peak: twice the SNR or
+twice the samples $\Rightarrow$ half the variance.
+\vspace{1ex}
+\begin{block}{At this project's settings}
+20\,dB SNR ($\mathrm{SNR}=100$), $L=2\times2047$: bound $=1.1$\,mrad.
+Phase can be measured \emph{very} precisely --- if noise were the only
+problem.
+\end{block}
+\srcline{CRLB for tone parameters: Rife \& Boorstyn, IEEE Trans.\ Inf.\ Theory, 1974; also [RN23] Eq.~17.}
+\end{frame}
+
+\begin{frame}{3.2\quad Measuring frequency: phase slope over a baseline}
+Frequency is the rate of phase change, so measure phase twice and
+divide by the time between:
+\[
+\hat\omega=\frac{\hat\phi_2-\hat\phi_1}{T_{\mathrm{sep}}}
+\qquad\Rightarrow\qquad
+\operatorname{var}(\hat\omega)=\frac{1}{\mathrm{SNR}\,L_b\,T_{\mathrm{sep}}^2}.
+\]
+\begin{itemize}
+\item The $T_{\mathrm{sep}}^2$ in the denominator is the useful lever: a
+\emph{longer baseline} between the two phase looks improves frequency
+quadratically. (Same reason a long telescope baseline improves angular
+resolution.)
+\item But the baseline cannot exceed the frame, and the phase difference
+must stay unambiguous ($|\omega|T_{\mathrm{sep}}<\pi$) --- so receivers
+use a \emph{coarse} estimate from short spacing first, then a
+\emph{fine} one from long spacing. We will see exactly this two-stage
+structure in the receiver.
+\item At \proj{} settings ($L_b{=}2047$, $T_{\mathrm{sep}}{=}2.175$\,ms,
+20\,dB): $\sigma_{\hat\omega}=0.16$\,Hz.
+\end{itemize}
+\srcline{Two-block frequency estimation: standard; variance form as implemented in \code{ota\_sync/sdr.py}.}
+\end{frame}
+
+\begin{frame}{3.3\quad The catch: your own clock jitters while you measure}
+The CRLB assumed the only corruption is receiver noise. But the
+receiver's oscillator runs its random walk \emph{during} the pilot, and
+the phase estimate effectively averages that walk over the observation.
+For a walk observed over samples $[a,\,a{+}n]$:
+\[
+\operatorname{var}(\overline W)\;\approx\;\sigma_{\mathrm{pn}}^2\,(a+n/3)
+\]
+(the walk arrives at the window already displaced --- the $a$ --- and
+averaging a wandering path leaves $n/3$).
+\begin{center}
+\small
+\begin{tabular}{lcc}
+\toprule
+per-measurement error & phase & frequency\\
+\midrule
+AWGN CRLB & 1.1\,mrad & 0.16\,Hz\\
+own LO phase noise during pilot & \alert{8.3\,mrad} & \alert{0.68\,Hz}\\
+\bottomrule
+\end{tabular}
+\end{center}
+\begin{itemize}
+\item Measurement here is \textbf{phase-noise limited, not SNR limited}:
+more transmit power stops helping almost immediately.
+\item A tracking filter must be told this (its $R$ must include the
+phase-noise terms), or it will trust each measurement $\sim$7$\times$
+too much and mis-weight everything.
+\end{itemize}
+\srcline{Walk-average variance and evaluation: this project, \code{teaching\_document.pdf} \S3.3.}
+\end{frame}
+
+\begin{frame}{3.4\quad What to transmit: Zadoff--Chu pilots \proj{}}
+A good pilot needs two properties, and Zadoff--Chu (ZC) sequences,
+$x[n]=e^{-j\pi u n(n+1)/L}$, deliver both:
+\begin{enumerate}
+\item \textbf{Constant amplitude} --- every sample has $|x[n]|=1$, so
+the power amplifier runs at a steady level without distortion.
+\item \textbf{Ideal autocorrelation} --- correlated against a shifted
+copy of itself, a ZC gives zero at every nonzero (cyclic) shift. A
+matched filter therefore produces \emph{one} sharp peak, giving precise
+timing even when multipath smears the signal. A cyclic prefix (CP; the
+sequence's tail copied in front) makes the channel's smearing look
+cyclic, preserving the property.
+\end{enumerate}
+\vspace{1ex}
+\proj{} frame (4606 samples $=$ 4.6\,ms at 1\,MS/s):
+\[
+\underbrace{\text{ZC-16}\times16}_{\text{STF: 256 samples}}
+\;\rightarrow\;
+\underbrace{[\text{CP }128+\text{ZC-2047}]\times2}_{\text{LTF: 4350 samples}}
+\]
+Short repeated blocks for \emph{finding} the packet; two long blocks for
+\emph{precision}. Next slide: why that split.
+\srcline{ZC: Chu, IEEE Trans.\ Inf.\ Theory, 1972. Note [RN23] transmits no waveform at all (its Eq.~15 observes oscillator states directly).}
+\end{frame}
+
+\begin{frame}{3.5\quad The receiver, stage by stage \proj{}}
+\begin{enumerate}
+\item \textbf{Detection + coarse CFO (from the STF).} Correlate the
+signal against \emph{itself} delayed by one repetition (16 samples). A
+repeated waveform matches itself regardless of channel or frequency
+offset --- that is what makes detection robust. And a frequency offset
+rotates each repetition relative to the last by $\omega\cdot16T_s$, so
+the \emph{angle} of that self-correlation reads off the CFO. Unambiguous
+while the rotation is under half a turn: $|f|<f_s/32=31.25$\,kHz. That
+is the acquisition range.
+\item \textbf{Fine timing.} Cross-correlate against the full known
+preamble; the ZC property gives one sharp peak (sample-accurate).
+\item \textbf{Fine CFO (from the two LTFs).} Phase difference across the
+2175-sample baseline --- the long-baseline trick of slide 3.2, now that
+coarse CFO has removed the ambiguity risk.
+\item \textbf{Phase.} After removing the measured CFO, matched-filter
+the LTFs; the correlation angle is the frame phase.
+\end{enumerate}
+Each stage needs the one before it: detect $\to$ time $\to$ frequency
+$\to$ phase.
+\srcline{Repeated-block detection/CFO: Schmidl \& Cox, IEEE Trans.\ Commun., 1997. Implementation: \code{ota\_sync/sdr.py}.}
+\end{frame}
+
+\begin{frame}{3.6\quad What the measurement actually contains}
+Here is the central obstacle of the whole subject. The phase B measures
+is
+\[
+m \;=\;
+\underbrace{\phi_{\mathrm{tx}}-\phi_{\mathrm{rx}}}_{\theta:\ \text{oscillators, what we want}}
+\;+\;
+\underbrace{\phi_c}_{\text{channel: delay + multipath}}
+\;+\; n .
+\]
+The wave accumulated phase traveling from A to B. The receiver sees one
+number; $\theta$ and $\phi_c$ enter it \emph{identically}. No amount of
+processing of one-way data can tell them apart.
+\vspace{1ex}
+\begin{alertblock}{Consequence}
+A one-way loop that drives $m\to0$ does not set $\theta=0$; it sets
+$\theta=-\phi_c$. The receiving oscillator \emph{absorbs the channel
+phase} as a hidden bias. Measured at \proj{} defaults: $\phi_c=+2.92$
+rad --- so one-way sync leaves the oscillators $2.92$\,rad apart while
+every internal indicator reads ``locked.''
+\end{alertblock}
+Whether that bias matters depends on the application --- next slide.
+\srcline{Identifiability framing and the measured bias: this project (\code{--model sdr}).}
+\end{frame}
+
+\begin{frame}{3.7\quad When the bias is harmless, and when it is fatal}
+\textbf{Harmless: a user closes the loop (cell-free MIMO).} If a user
+measures pilots from both stations, its channel estimate for station B
+--- called CSI, \emph{channel-state information} --- contains B's
+oscillator bias, indistinguishable from the channel to B and corrected
+together with it. Any \emph{constant} per-station phase
+drops out. Only the \emph{drift} between CSI updates matters, and the
+sync loop controls exactly that. One-way sync suffices.
+\vspace{1ex}
+\textbf{Fatal: nothing closes the loop (passive coherent sensing).}
+Beamforming toward a computed direction, or coherently combining echoes
+from a target that cannot talk back: the carriers must be aligned
+\emph{at the antennas themselves}. A hidden $2.92$\,rad offset simply
+points the array somewhere else --- and nothing in the system can see
+it.
+\vspace{1ex}
+\begin{block}{So the question becomes}
+Can the stations measure $\theta$ \emph{without} the channel phase?
+Yes --- by using the channel twice.
+\end{block}
+\srcline{Application taxonomy: standard; quantified for both cases later in this deck.}
+\end{frame}
+
+\begin{frame}{3.8\quad Two-way exchange: canceling the channel with itself}
+Radio channels are \emph{reciprocal}: the phase accumulated from A to B
+equals the phase from B to A over the same path at the same time. So
+exchange pilots both ways within a channel coherence time:
+\[
+m_{\mathrm f}=\theta+\phi_c+n_1
+\qquad
+m_{\mathrm r}=-\theta+\phi_c+n_2
+\]
+($\theta$ flips sign with direction; $\phi_c$ does not). Then:
+\[
+\tfrac12(m_{\mathrm f}-m_{\mathrm r})=\theta+\tfrac{n_1-n_2}{2}
+\qquad
+\tfrac12(m_{\mathrm f}+m_{\mathrm r})=\phi_c+\tfrac{n_1+n_2}{2}
+\]
+The half-difference is the pure oscillator offset; the half-sum is the
+pure channel phase; the two are uncorrelated, each with half the noise.
+\vspace{1ex}
+\begin{alertblock}{Two costs, both of which will bite later}
+(1) Phases are only known modulo $2\pi$, and \emph{halving} a
+modulo-$2\pi$ quantity leaves two possible answers, $\pi$ apart. One
+branch must be chosen. \quad (2) Only the \emph{air} is reciprocal: each
+node's transmit chain and receive chain are different electronics, and
+that per-node TX/RX difference survives the subtraction --- it needs a
+one-time loopback calibration.
+\end{alertblock}
+\srcline{Two-way transfer: classical (time-transfer lineage). Both caveats as stated: \code{teaching\_document.pdf} \S3.5.}
+\end{frame}
+
+\begin{frame}{4.1\quad Closing the loop: the NCO}
+B cannot bend its crystal. What it \emph{can} do is rotate its digital
+baseband: multiply samples by $e^{-j(\hat\phi+\hat\omega t)}$ --- a
+\textbf{numerically controlled oscillator (NCO)}. Corrections are
+digital, quantized (here: phase steps of $2\pi/2^{16}$, frequency steps
+of 0.01\,Hz), and take effect only after the frame has been processed
+--- one interval of \emph{latency} in this model.
+\vspace{1ex}
+The loop, once per interval $T$:
+\[
+\text{capture}\ \to\ \text{estimate }(m,\hat\omega)\ \to\
+\text{filter}\ \to\ \text{command NCO (loads next interval)}
+\]
+\vspace{0.5ex}
+Two questions remain, and they are the last two foundations:
+\begin{enumerate}
+\item How should noisy measurements be turned into corrections?
+(the Kalman filter, next slide)
+\item What does the loop's delay cost? (slide after)
+\end{enumerate}
+\srcline{NCO discipline: standard SDR practice; parameters: \code{ota\_sync/sdr.py}.}
+\end{frame}
+
+\begin{frame}{4.2\quad The Kalman filter, as a trust dial}
+Each interval the filter holds a \emph{prediction} of $[\theta,\omega]$
+and receives a \emph{measurement}. It blends them:
+\[
+\text{estimate}=\text{prediction}+\kappa\,(\text{measurement}-\text{prediction})
+\]
+The gain $\kappa\in[0,1]$ is not tuned by hand; it is computed from two
+declared variances:
+\begin{itemize}
+\item $Q$ (process noise): \emph{how fast does the truth wander between
+measurements?} --- the oscillator physics of Part 2.
+\item $R$ (measurement noise): \emph{how noisy is one measurement?} ---
+the estimation limits of Part 3, including the phase-noise terms.
+\end{itemize}
+Large $Q$/small $R$: trust the meter ($\kappa\to1$). Small $Q$/large
+$R$: trust memory ($\kappa\to0$). After a few steps $\kappa$ and the
+error variance settle at a \textbf{steady state} --- the equilibrium
+where information gained per measurement balances truth-wander per
+interval. That steady-state uncertainty is a computable number, and it
+is about to matter. (One word to keep: the filter's belief just after
+absorbing a measurement is its \emph{posterior}; ``posterior
+uncertainty'' means the spread of that belief.)
+\vspace{1ex}
+Phase wraps at $\pm\pi$, so the filter observes $[\cos m,\sin m]$
+instead of $m$ (no wrap discontinuity) and re-linearizes within each
+update --- an \emph{extended} KF.
+\srcline{Kalman filtering: standard; iterated-EKF and Joseph-form details in \code{ota\_sync/core.py}.}
+\end{frame}
+
+\begin{frame}{4.2b\quad The trust dial in action: a toy example}
+One tracked quantity. The truth wanders by variance $Q=4$ per step
+(steps of typical size 2); each measurement has variance $R=5$ (typical
+error 2.24). Track the filter's own uncertainty $P$:
+\[
+\text{predict: } P^-\!=P+Q
+\qquad
+\text{gain: } \kappa=\frac{P^-}{P^-+R}
+\qquad
+\text{update: } P\leftarrow(1-\kappa)P^-
+\]
+\begin{center}
+\small
+\begin{tabular}{ccccc}
+\toprule
+round & $P^-$ (before meas.) & $\kappa$ & $P$ (after meas.) & error std\\
+\midrule
+1 & 4.00 & 0.44 & 2.22 & 1.49\\
+2 & 6.22 & 0.55 & 2.77 & 1.66\\
+3 & 6.77 & 0.58 & 2.88 & 1.70\\
+$\infty$ & 6.90 & 0.58 & 2.90 & 1.70\\
+\bottomrule
+\end{tabular}
+\end{center}
+Three things to take away:
+\begin{itemize}
+\item The uncertainty \textbf{settles in a few rounds}, wherever it
+starts: the equilibrium where the wander added per step ($Q$) balances
+the information each measurement removes.
+\item Settled error (1.70) beats any \emph{single} measurement (2.24)
+--- memory helps --- but cannot reach zero: fresh wander keeps arriving.
+\item This settled number is exactly the ``steady-state posterior
+uncertainty'' that the latency term on the next slide integrates into
+phase.
+\end{itemize}
+\srcline{Standard scalar Kalman recursion; numbers chosen for arithmetic clarity.}
+\end{frame}
+
+\begin{frame}{4.3\quad What latency costs}
+The correction computed from frame $k$ loads at frame $k{+}1$ ---
+$T=50$\,ms later. The controller is not naive: it knows its latency and
+commands the \emph{predicted} state, $\hat\theta+\hat\omega T$. The
+deterministic drift is cancelled. What survives?
+\[
+\theta_{\text{actual}}-\theta_{\text{commanded}}
+=\underbrace{(\omega-\hat\omega)\,T}_{\text{frequency error, integrated}}
++\underbrace{\text{new walk}}_{\text{already counted}}
+\]
+The frequency \emph{estimate error} integrates into phase over the wait.
+Its size is the filter's steady-state frequency uncertainty
+$\sigma_{\hat\omega}$ --- computable from $Q_\omega$ and $R_\omega$ by
+iterating the variance recursion to its fixed point:
+\[
+Q_\omega=0.79,\ R_\omega=1.03\ (\text{rad/s})^2
+\;\Rightarrow\;
+\sigma_{\hat\omega}=0.77\ \text{rad/s}
+\;\Rightarrow\;
+\sigma_{\hat\omega}T=38\ \text{mrad}.
+\]
+\begin{block}{The pre-registered prediction \proj{}}
+Walk floor $\sqrt{kT}=45$\,mrad (slide 2.2) $\;+\;$ latency floor
+38\,mrad $\;+\;$ tracking ${\sim}12$\,mrad. Neither of the first two
+depends on SNR. Part 3 of this lecture measures exactly these numbers.
+\end{block}
+\srcline{Riccati fixed point: standard; this decomposition of a closed sync loop: this project (no counterpart in [RN23], whose updates are instantaneous).}
+\end{frame}
+
+%=====================================================
+\section{The reference paper}
+
+\begin{frame}{5.1\quad The reference paper: what it is and why it exists}
+\begin{block}{Full citation}
+M.~Rashid and J.~A.~Nanzer, ``Frequency and Phase Synchronization in
+Distributed Antenna Arrays Based on Consensus Averaging and Kalman
+Filtering,'' \emph{IEEE Transactions on Wireless Communications},
+vol.~22, no.~4, pp.~2789--2802, April 2023. (arXiv:2201.08931; PDF in
+this repository.)
+\end{block}
+Its motivation, from its introduction \RN{, \S I}:
+\begin{itemize}
+\item \emph{Closed-loop} array methods (nodes adjust using feedback bits
+from the destination) only work when the destination can talk back ---
+useless for remote sensing or arbitrary beam steering. So the paper
+targets \emph{open-loop} arrays: nodes align \textbf{with each other
+only}.
+\item Prior open-loop work used a primary--secondary architecture (one
+master broadcasts a reference) --- which dies with the master. Prior
+\emph{decentralized} work aligned \textbf{frequency only}.
+\item This paper's goal: decentralized \textbf{frequency-and-phase}
+alignment, with no leader, plus a closed-form prediction of the residual
+error.
+\end{itemize}
+\end{frame}
+
+\begin{frame}{5.2\quad \RN{} The network picture}
+\begin{itemize}
+\item $N$ nodes ($N=5$ to 400 in their experiments), each a radio with
+its own oscillator. Nodes that can hear each other are joined by an edge
+of an undirected graph $\mathcal G$.
+\item \textbf{Connectivity} $c\in(0,1]$: the fraction of all
+$N(N{-}1)/2$ possible edges that exist. $c=1$: everyone hears everyone;
+$c=0.05$: sparse, each node hears few neighbors. Sparse graphs are the
+realistic and difficult case, and much of the paper is about them.
+\item Once per update interval $T$, every node broadcasts and every node
+updates --- \emph{synchronized rounds}, which is why the paper assumes
+time synchronization is already solved.
+\item Simultaneous broadcasts are separated by TDMA (time slots): with
+$D$ neighbors on average, each node's observation window shrinks from
+$L$ samples to $L/D$ --- degrading the estimation errors below
+\RN{, Eqs.~18--21}.
+\end{itemize}
+\srcline{[RN23] \S II--III; their simulation parameters: $f_c=1$\,GHz, $f_s=10$\,MHz, $T=0.1$\,ms, SNR $=0$\,dB.}
+\end{frame}
+
+\begin{frame}{5.3\quad \RN{} What each node measures}
+Each node broadcasts its bare oscillator signal, and neighbors estimate
+its frequency and phase from $L$ received samples:
+\[
+x_n(t)=e^{j(2\pi f_n t+\theta_n)}+\text{noise}
+\qquad\text{\RN{, Eq.~15}}
+\]
+with estimation errors at the CRLBs (slide 3.1's bound, plus its
+frequency analog):
+\[
+\sigma^m_f=\sqrt{\frac{6}{(2\pi)^2L^3\,\mathrm{SNR}}}\cdot f_s
+\qquad
+\sigma^m_\theta=\sqrt{\frac{2}{L\,\mathrm{SNR}}}
+\qquad\text{\RN{, Eqs.~16--17}}
+\]
+(Why $L^3$ for frequency: more samples average the noise --- one factor
+of $L$ --- \emph{and} lengthen the observation window, which improves a
+\emph{rate} quadratically, exactly the baseline effect of slide 3.2 ---
+two more factors of $L$.)
+\begin{alertblock}{Read Eq.~15 carefully --- this is the paper's deepest assumption}
+The oscillator is observed \emph{directly in noise}. There is no
+propagation channel between the nodes: no delay phase, no multipath.
+The identifiability problem of slide 3.6 --- that a real receiver sees
+oscillator \emph{plus} channel phase --- does not exist in this model.
+All channel and geometry phase is bundled into one constant
+$\theta^e_n$, ``assumed corrected'' by some other mechanism.
+\end{alertblock}
+Part 3 measures what happens when this assumption meets a real channel.
+\srcline{[RN23] \S II-B.}
+\end{frame}
+
+\begin{frame}{5.4\quad \RN{} The error model, part 1: the oscillators}
+Their oscillator spec, in the Allan-deviation form of slide 2.4:
+\[
+\sigma_f=f_c\sqrt{\beta_1/T+\beta_2T},\qquad
+\beta_1=\beta_2=5\times10^{-19}
+\qquad\text{\RN{, Eq.~2}}
+\]
+($\beta_1$: white FM; $\beta_2$: random-walk FM; values for an ordinary
+quartz TCXO --- the few-dollar temperature-compensated crystal of slide
+2.4. No flicker term.)
+\vspace{1ex}
+Evaluate it at their setup ($f_c=1$\,GHz, $T=10^{-4}$\,s):
+\[
+\sigma_f=10^9\sqrt{5\times10^{-15}+5\times10^{-23}}\approx70.7\ \text{Hz}
+\]
+Two error terms follow per interval:
+\begin{itemize}
+\item \textbf{Drift phase} $2\pi\sigma_fT=2\pi\cdot70.7\cdot10^{-4}
+=44.4\ \text{mrad}=2.55^\circ$: the phase the frequency offset sweeps
+out before the next update.
+\item \textbf{Intra-interval drift} $\pi T\sigma_f=1.27^\circ$: the
+frequency is not even constant within the interval; integrating its
+linear change leaves this \RN{, Eqs.~3--4, 13}.
+\end{itemize}
+\srcline{[RN23] \S II-B; numerical evaluation: this deck.}
+\end{frame}
+
+\begin{frame}{5.5\quad \RN{} The error model, part 2: jitter and estimation}
+\textbf{Phase jitter.} A spec-sheet number: the oscillator's total
+phase-noise power, $A=-53.46$\,dBc (``dBc'' $=$ decibels relative to
+the carrier's own power). It converts to a jitter of
+$\sigma_\theta=\sqrt{2\cdot10^{A/10}}=2.7$\,mrad $=0.15^\circ$,
+\emph{drawn fresh each interval} \RN{, Eq.~5} --- no memory across
+intervals (contrast slide 2.2's continuous walk).
+\vspace{1ex}
+\textbf{Estimation errors} at their setup ($L=Tf_s=1000$ samples,
+SNR$=0$\,dB$=1$):
+\[
+\sigma^m_f=123\ \text{Hz}\ \Rightarrow\ 2\pi\sigma^m_fT=4.44^\circ
+\qquad\qquad
+\sigma^m_\theta=44.7\ \text{mrad}=2.56^\circ
+\]
+\begin{block}{Now the budget is visible --- and it explains the paper's agenda}
+Per interval: frequency-estimation $4.44^\circ$ \ $>$ \ phase-estimation
+$2.56^\circ$ $\approx$ drift $2.55^\circ$ \ $>$ \ intra-drift
+$1.27^\circ$ \ $\gg$ \ jitter $0.15^\circ$. At short $T$ the loop is
+\textbf{estimation-dominated}: only 1000 noisy samples per look. That is
+precisely the regime where filtering (memory) should help --- which is
+why the paper's second algorithm exists.
+\end{block}
+\srcline{[RN23] Eqs.~5, 16--17; numerical evaluation: this deck.}
+\end{frame}
+
+\begin{frame}{5.6\quad \RN{} DFPC, the algorithm itself}
+One round of \emph{decentralized frequency and phase consensus}, per
+their Algorithm 1:
+\begin{enumerate}
+\item Every oscillator degrades: frequencies pick up drift
+$\mathcal N(0,\sigma_f^2)$; phases pick up intra-interval drift and
+jitter.
+\item Every node broadcasts; every neighbor \emph{estimates} what it
+hears, adding $\mathcal N(0,(\sigma^m_f)^2)$ and
+$\mathcal N(0,(\sigma^m_\theta)^2)$.
+\item Every node replaces its own frequency and phase by a
+\textbf{weighted average of the estimates of its neighbors (and
+itself)}:
+\[
+\mathbf f(k)=\mathbf W\,\mathbf f(k{-}1),\qquad
+\boldsymbol\theta(k)=\mathbf W\,\boldsymbol\theta(k{-}1)
+\qquad\text{\RN{, Eq.~8}}
+\]
+\end{enumerate}
+\begin{itemize}
+\item The matrix form is bookkeeping: row $n$ has nonzero entries only
+for node $n$'s neighbors, so each node computes locally. No leader.
+\item For plain DFPC \textbf{the broadcast waveform is the message}: no
+data link exists anywhere.
+\item Note also what step 3 is \emph{not}: there is no NCO, no latency
+--- the new value simply \emph{is} the node's state (instantaneous
+actuation, slide 4.3's term absent by construction).
+\end{itemize}
+\srcline{[RN23] Algorithm 1, \S III.}
+\end{frame}
+
+\begin{frame}{5.7\quad \RN{} The mixing matrix, built by hand}
+The weights are Metropolis--Hastings: for an edge $(i,j)$,
+$w_{ij}=1/(1+\max\{n_i,n_j\})$ where $n_i$ is node $i$'s degree; the
+self-weight absorbs the remainder \RN{, Eq.~9}.
+\vspace{1ex}
+\textbf{Worked example} --- three nodes in a line, $A\!-\!B\!-\!C$
+(degrees 1, 2, 1):
+\[
+w_{AB}=w_{BC}=\frac{1}{1+\max(1,2)}=\tfrac13
+\qquad\Rightarrow\qquad
+\mathbf W=\begin{bmatrix}\tfrac23&\tfrac13&0\\[2pt]
+\tfrac13&\tfrac13&\tfrac13\\[2pt]0&\tfrac13&\tfrac23\end{bmatrix}
+\]
+Check the two properties that make consensus work:
+\begin{itemize}
+\item \textbf{Rows sum to 1}: each update is a proper average --- no
+node can run away.
+\item \textbf{Columns sum to 1 too} (doubly stochastic): the
+\emph{network average} is preserved by every round. So if the values
+converge to a common number, that number must be the average of where
+they started.
+\end{itemize}
+The $\max$ in the denominator is the safety margin: a weight small
+enough for the busier endpoint is safe for both.
+\srcline{[RN23] Eq.~9; worked example: this deck.}
+\end{frame}
+
+\begin{frame}{5.8\quad \RN{} Why and how fast consensus converges}
+Think of each round as a blurring pass over the network: the overall
+average survives untouched, and every \emph{pattern of disagreement}
+fades. Linear algebra makes that exact: $\mathbf W$'s largest
+eigenvalue is 1, belonging to the ``everyone equal'' direction
+$\mathbf 1=(1,\dots,1)$; every other pattern shrinks per round by at
+most $\lambda_2$, the second-largest eigenvalue magnitude --- the
+survival factor of the most stubborn disagreement pattern:
+\[
+\mathbf W^{I}\ \longrightarrow\ \tfrac1N\mathbf{11}^\top
+\qquad\text{(all states $\to$ the initial average)}
+\]
+\begin{itemize}
+\item Dense graph: $\lambda_2$ small, disagreement dies in a few rounds.
+Sparse graph: $\lambda_2\to1$, information creeps across the network.
+\item Their trajectories \RN{, Figs.~1--2}: initial frequency spread of
+$\pm100$\,ppm collapses within tens of iterations at $c=0.2$; larger
+$N$ at fixed $c$ converges \emph{faster} (each node has $D=c(N{-}1)$
+neighbors --- more neighbors, better local averages).
+\item Converged total phase error falls with $N$ toward a floor
+\RN{, Fig.~3} --- averaging over more neighbors suppresses the
+per-node errors, until the injected noise floor takes over.
+\end{itemize}
+\srcline{[RN23] \S III-A, Figs.~1--3.}
+\end{frame}
+
+\begin{frame}{5.9\quad \RN{} Why the error does \emph{not} go to zero}
+With noiseless oscillators and perfect estimates, mixing would converge
+exactly and stay. But \emph{every round injects fresh errors} (steps
+1--2 of the algorithm), so the network reaches an equilibrium between
+two competing rates:
+\begin{center}
+mixing removes disagreement at $\sim(1-\lambda_2)$ per round\\
+vs.\ injection adds $\sigma_e$ per round
+\end{center}
+Formally: the accumulated error after $I$ rounds is
+$\sum_i\mathbf W^{i+1}\mathbf e_{I-i}$; measured relative to the network
+average, its standard deviation is bounded by
+$\sigma_e\sqrt{\sum_m\lambda_2^{2m}}$ \RN{, Eqs.~23--26}.
+\begin{itemize}
+\item \textbf{Dense}: the geometric sum is small --- equilibrium well
+below the injection level.
+\item \textbf{Sparse} ($\lambda_2\to1$): the sum is large --- errors
+linger as long as they keep being replaced, and the equilibrium
+saturates \emph{at the injected level itself}.
+\end{itemize}
+In the sparse limit the residual is therefore just the
+root-sum-of-squares of the five per-round error terms --- next slide.
+\srcline{[RN23] \S III-A.}
+\end{frame}
+
+\begin{frame}{5.10\quad \RN{} Eq.~27, assembled from the numbers we already have}
+\[
+\sigma_{\phi,\mathrm{total}}
+=\sqrt{(2\pi\sigma_fT)^2+(2\pi\sigma^m_fT)^2+(\pi T\sigma_f)^2
++(\sigma^m_\theta)^2+\sigma_\theta^2}
+\qquad\text{\RN{, Eq.~27}}
+\]
+At their setup, the five terms are the ones computed on slides 5.4--5.5:
+\[
+\sqrt{(2.55^\circ)^2+(4.44^\circ)^2+(1.27^\circ)^2+(2.56^\circ)^2+(0.15^\circ)^2}
+=5.9^\circ
+\]
+\begin{itemize}
+\item Well under the $18^\circ$/90\% bar of slide 1.2 --- consensus
+alone suffices \emph{in this model}.
+\item The biggest term is frequency estimation ($4.44^\circ$): the
+motivation for filtering, next slide.
+\item Compare with slide 4.3's closed-loop floor: Eq.~27 has \textbf{no
+latency term} (instantaneous updates), \textbf{no channel term} (Eq.~15
+has no channel), and \textbf{no noise memory} (jitter redrawn each
+round). These absences are exactly where Part 3 will press.
+\end{itemize}
+\srcline{[RN23] Eq.~27; term-by-term evaluation: this deck (matches the $5.9^\circ$ used in Part 3's validation).}
+\end{frame}
+
+\begin{frame}{5.11\quad \RN{} KF-DFPC: filter first, then average}
+The frequency-estimation term dominates because each look uses only
+1000 noisy samples --- but the \emph{truth changes slowly} between
+looks. That is exactly when the trust dial of slide 4.2 says: use
+memory. So each node runs a two-state Kalman filter on its own noisy
+observations before the network averages:
+\begin{itemize}
+\item State $[f_n,\theta_n]$; process covariance $\mathbf Q$ built from
+the drift and jitter statistics of slides 5.4--5.5 (its off-diagonal
+term encodes that a frequency kick also moves the phase it integrates
+into) \RN{, Eq.~29}
+\item Measurement covariance $=$ the CRLBs \RN{, Eq.~31}; standard
+predict/update \RN{, Eqs.~33, 35--36}
+\item Then consensus-average the \emph{posterior means}, and mix the
+covariance entries with squared weights so each node's filter knows how
+uncertain its mixed prior is \RN{, Eqs.~38--39}
+\end{itemize}
+\begin{alertblock}{Two structural facts}
+(1) Posterior means \emph{and covariances} must now travel between
+nodes: KF-DFPC needs an error-free \textbf{data side channel}, which
+plain DFPC did not. (2) \textbf{No closed form} is derived for
+KF-DFPC's residual --- it is characterized by simulation against
+Eq.~27.
+\end{alertblock}
+\srcline{[RN23] \S IV, Algorithm 2.}
+\end{frame}
+
+\begin{frame}{5.12\quad \RN{} Results, part 1: convergence and baselines}
+\textbf{Convergence speed} (threshold: total phase error under
+$1^\circ$):
+\begin{center}
+\small
+\begin{tabular}{lcc}
+\toprule
+ & DFPC & KF-DFPC\\
+\midrule
+$N{=}100$, connectivity 0.05 & 16 iterations & \textbf{2}\\
+$N{=}65$, connectivity 0.05 & 158 iterations & \textbf{4}\\
+\bottomrule
+\end{tabular}
+\end{center}
+Filtering shortens convergence dramatically on sparse graphs ---
+smoothed values mix far more efficiently than noisy ones
+\RN{, Figs.~4, 8}. Fewer rounds also means less energy spent
+broadcasting.
+\vspace{1ex}
+\textbf{Baselines beaten} \RN{, Figs.~7--9} --- three existing
+distributed estimators:
+\begin{itemize}
+\item \textbf{DLMS} (diffusion least-mean-squares): adaptive averaging
+with no state model --- worst everywhere (it cannot exploit the slow
+dynamics).
+\item \textbf{DKF} (diffusion KF): shares estimates but not
+covariances --- slow to converge.
+\item \textbf{KCIF} (Kalman consensus information filter): shares
+measurements and covariances --- competitive at small $N$/high SNR, but
+plateaus (suboptimal gain).
+\end{itemize}
+KF-DFPC wins at low SNR and sparse connectivity --- the practical
+corner.
+\srcline{[RN23] \S V, Figs.~4, 7--9.}
+\end{frame}
+
+\begin{frame}{5.13\quad \RN{} Results, part 2: the update-interval sweep}
+Their Fig.~10 sweeps $T$ from 0.1\,ms to 3\,s and finds a
+\textbf{U-shape} for DFPC, minimum near $T=20$\,ms. The shape follows
+from the term scalings we computed:
+\begin{itemize}
+\item \textbf{Drift terms grow with $T$}: more time between updates
+means more phase swept out ($2\pi\sigma_fT$).
+\item \textbf{Estimation terms shrink with $T$}: a longer interval means
+more samples per look ($L=Tf_s$), so $\sigma^m_f,\sigma^m_\theta$ fall.
+\item The optimum sits where the two cross --- at their parameters,
+$T\approx20$\,ms.
+\end{itemize}
+KF-DFPC removes most of the left (estimation-dominated) branch:
+filtering substitutes memory for samples, so short-$T$ operation stops
+being punished. Consistently, its converged error is nearly
+\textbf{SNR-independent} across $-30$ to $+120$\,dB \RN{, Fig.~11} ---
+the filter compensates measurement quality with memory, at the cost of
+a few more convergence iterations at low SNR \RN{, Fig.~9}.
+\vspace{1ex}
+Note the design language: this figure is a \emph{cadence trade-off} ---
+the same axis this project's designs will push on, but without latency,
+channel, or airtime in the model.
+\srcline{[RN23] \S V, Figs.~9--11.}
+\end{frame}
+
+\begin{frame}{5.14\quad \RN{} The assumptions, and what each one hides}
+\begin{enumerate}
+\item \textbf{No channel in the measurement} (Eq.~15). Hides the
+identifiability problem (slide 3.6) entirely --- over the air, every
+measurement would contain $\phi_c$.
+\item \textbf{Instantaneous updates.} Hides the latency term (slide
+4.3) --- in the paper, a computed correction simply \emph{is} the new
+state.
+\item \textbf{Jitter redrawn each interval; no flicker.} Hides noise
+memory: real intra-frame noise carries into the next interval.
+\item \textbf{Statistics-level validation.} Its simulations draw
+Gaussian errors from the assumed model (Algorithm 1) --- they exercise
+the algebra, not the physics.
+\item \textbf{Time sync assumed done; side channel ideal.}
+\end{enumerate}
+\vspace{1ex}
+None of these are algebra errors --- they are scope choices, and
+standard ones. Part 3's simulator exists precisely to measure what they
+cost.
+\srcline{Assessment: this project (\code{paper\_review\_rashid\_nanzer.pdf}), confirmed against the full text.}
+\end{frame}
+
+%=====================================================
+\section{This project}
+
+\begin{frame}{\proj{} How the project is built: tools, and why each one}
+\begin{description}
+\item[Python 3.11 + PyTorch] All signal processing and simulation is
+tensor math over complex numbers; PyTorch supplies that, plus seeded
+random-number generators and an optional GPU path. Everything runs in
+\textbf{double precision} (\code{float64}/\code{complex128}) --- the
+questions here live at the milliradian level, and single precision
+($\sim$$10^{-7}$ relative error) would leave too little headroom under
+long accumulations.
+\item[NVIDIA Sionna 2 (\code{sionna-no-rt})] Supplies the channel
+physics: the 3GPP TR~38.901 TDL multipath profiles, Jakes-correlated
+tap evolution under mobility, and the blocks that apply them to
+waveforms. Reason: the channel is the one part of the physics for which
+a standards-grade, widely-validated implementation exists ---
+hand-rolling it would add exactly the kind of silent error this project
+exists to avoid.
+\item[Determinism by construction] Every run is seeded (PyTorch global
+seed, a separate stream for the radio's noise draws, Sionna's own
+seed): identical command $\Rightarrow$ byte-identical output --- which
+is what made the ``rerun and diff'' verification step meaningful.
+\end{description}
+\srcline{\code{requirements.txt}: \code{sionna-no-rt==2.0.1}; \code{pyproject.toml}: Python $\geq$ 3.11.}
+\end{frame}
+
+\begin{frame}{\proj{} How the code is organized}
+\begin{center}
+\small
+\begin{tabular}{ll}
+\toprule
+module & contents\\
+\midrule
+\code{ota\_sync/core.py} & oscillator model, iterated EKF (shared by every loop)\\
+\code{ota\_sync/sdr.py} & config, frame, radio link + impairments, receiver,\\
+ & one-way loop, oracle grading path\\
+\code{ota\_sync/coherent.py} & two-way loop, $\pi$-calibration, CSI-gain evaluation\\
+\code{ota\_sync/dfpc.py} & \RN{} reimplementations: statistics level \emph{and} OTA\\
+\code{ota\_sync/microsync.py} & two-tier micro-pilot loop\\
+\code{hybrid\_calibration/} & the 3-state hybrid (a separate package)\\
+\code{simulation.py} & one CLI; \code{--model} selects the loop (7 models $+$ \code{compare})\\
+\code{tests/} & 18 \code{pytest} regression tests\\
+\bottomrule
+\end{tabular}
+\end{center}
+\begin{itemize}
+\item One design rule: every loop reuses the \emph{same} oscillator,
+channel, and receiver blocks --- so when two schemes differ, the
+difference is the scheme, not the plumbing. (This is what made the
+82.8-vs-80.8 equivalence result meaningful.)
+\item Each finding in this lecture is frozen as a test: oracle
+consistency, the ablation floors, anti-phase capture, the calibration
+flip, the Doppler-prior effect --- so later changes cannot silently
+undo them.
+\end{itemize}
+\srcline{Repository layout; run \code{python -m pytest} from the repo root.}
+\end{frame}
+
+\begin{frame}{\proj{} Working method: how results were kept trustworthy}
+The recurring pattern, applied to every claim in Part 3:
+\begin{enumerate}
+\item \textbf{Predict first.} Hand-compute the expected number from the
+physics before running (the 45\,mrad walk and 38\,mrad latency floors
+of slide 4.3 predate every simulation that confirmed them).
+\item \textbf{Isolate by ablation.} Every physical effect has a switch
+(\code{--no-rf-impairments}, \code{--correction-latency 0},
+\code{--micro-pilots M}, \code{--anchor-every K}) so each term of a
+budget can be measured alone.
+\item \textbf{Grade against independent truth} (the oracle path) ---
+never against the estimator's own inputs.
+\item \textbf{Verify surprises independently.} The anti-phase capture
+was confirmed by hand arithmetic, by a four-line radio-free model, and
+by a seed sweep against the predicted capture condition --- three
+routes that share no code with the simulator's loop.
+\item \textbf{Check reproducibility literally}: rerun and \code{diff}
+(deterministic seeding makes outputs byte-identical).
+\item \textbf{Cross-check budgets}: e.g., unfiltered consensus's
+measured 0.442\,Hz frequency noise predicts a 146\,mrad residual;
+observed 153.
+\end{enumerate}
+\srcline{The same discipline explains the one thing simulation cannot supply: hardware validation (open item).}
+\end{frame}
+
+\begin{frame}{\proj{} The simulator: test the physics, not the algebra}
+Everything from Part 1 is implemented at the waveform level and nothing
+is handed to the receiver:
+\begin{center}
+\small
+\begin{tabular}{llll}
+\toprule
+carrier / rate & 915\,MHz / 1\,MS/s & interval $T$ & 50\,ms\\
+channel & 3GPP TDL-D + shadowing & noise floor & \textbf{fixed} (so SNR fades)\\
+oscillators & all four noise types, continuous & clock & one crystal (slide 2.5)\\
+TX/RX chain & PA, DAC, IQ imbal., AGC, DC, ADC & NCO & quantized, latency 1\\
+\bottomrule
+\end{tabular}
+\end{center}
+\begin{itemize}
+\item ``TDL-D'': a standardized statistical multipath profile published
+by the cellular-standards body 3GPP (report TR 38.901), implemented via
+NVIDIA's Sionna library; ``shadowing'': slow strength fades from
+obstructions. The other rows are the standard analog imperfections of
+any real transceiver.
+\item The receiver runs the full stage chain of slide 3.5 on raw IQ ---
+detection can fail, timing can slip, estimates carry their real noise.
+\item The intra-frame phase-noise walk \emph{continues} into the next
+interval (folded into the oscillator state): noise has memory, unlike
+\RN{}.
+\end{itemize}
+\srcline{\code{ota\_sync/} package; architecture: \code{simulation\_design.pdf}.}
+\end{frame}
+
+\begin{frame}{\proj{} Grading honestly: the oracle path}
+\begin{alertblock}{A trap this project fell into, then fixed}
+Compare the filter's estimate to the measurement that just updated it,
+and the residual is only $(1-\kappa)\times$ the innovation (slide 4.2:
+the estimate was \emph{pulled toward} that measurement). Both can be far
+from the truth while agreeing with each other. This code initially
+reported 0.105\,mrad tracking error that way.
+\end{alertblock}
+\vspace{1ex}
+Fix: every capture is generated \emph{twice}. The \textbf{oracle twin}
+shares everything deterministic --- same frame, same channel
+realization, same timing, same PA/DAC distortion --- and omits
+everything stochastic (noise, phase noise, receiver impairments).
+Running the same estimator on the twin yields the true observable
+phase; all errors are graded against that.
+\vspace{1ex}
+Ground-truth tracking RMSE: \textbf{12.0--12.5\,mrad} ---
+${\sim}100\times$ the self-graded figure. (Method contrast: \RN{}
+validates against draws from its own assumptions; here the claims are
+checked against an independent physical model.)
+\srcline{\code{ota\_sync/sdr.py} (oracle path); \code{--model sdr}, seed 0.}
+\end{frame}
+
+\begin{frame}{\proj{} The error budget, measured by ablation}
+Slide 4.3 predicted the floor before any simulation. Now measure it,
+isolating each term by switching physics off:
+\begin{center}
+\small
+\begin{tabular}{lcc|l}
+\toprule
+configuration & tracking & residual & what the row isolates\\
+\midrule
+full defaults & 12.0\,mrad & 69.6\,mrad & all terms together\\
+RF impairments off & 1.1\,mrad & 34.3\,mrad & latency alone (predicted 38)\\
+zero latency & 12.3\,mrad & 12.3\,mrad & tracking alone\\
+\bottomrule
+\end{tabular}
+\end{center}
+Reading the table: with impairments off, the walk and phase-noise terms
+vanish and the 34.3\,mrad left is the latency term --- against slide
+4.3's hand-computed prediction of 38. The 1.1\,mrad tracking in that
+row sits exactly on the AWGN CRLB (slide 3.1). Full defaults combine
+$45\oplus38\oplus12$ plus flicker/shadowing $\to$ 69.6.
+\begin{block}{Consequences}
+The floor is set by \textbf{oscillator quality, correction cadence, and
+latency} --- not pilot energy. And the latency term is absent from
+\RN{, Eq.~27} and (per a 19-source verified search) from the published
+literature through Dec.~2025.
+\end{block}
+\srcline{\code{--model sdr} with \code{--no-rf-impairments} / \code{--correction-latency 0}; search: \code{LITERATURE\_REVIEW.md}.}
+\end{frame}
+
+\begin{frame}{\proj{} Two-way sync: the bias is gone}
+Implementing the exchange of slide 3.8 in the simulator: forward and
+reverse frames traverse the same channel realization within the
+interval, and the EKF consumes the half-difference phase and frequency
+(each with half the one-way noise).
+\begin{center}
+\small
+\begin{tabular}{lcc}
+\toprule
+ & one-way loop & two-way loop\\
+\midrule
+oscillator residual & $-2.92$\,rad (hidden bias) & \textbf{81.8\,mrad RMS}\\
+two-station gain & near 0 open-loop & 99.83\%\\
+airtime & 9.6\% & 19.1\%\\
+\bottomrule
+\end{tabular}
+\end{center}
+The carriers are now genuinely aligned \emph{at the antennas} --- the
+capability passive sensing requires --- at double the pilot airtime.
+\vspace{1ex}
+
+But slide 3.8's caveat (1) is still owed: halving a wrapped quantity
+leaves two candidate answers, $\pi$ apart, and a branch must be picked.
+The next slide traces what a wrong pick does.
+\srcline{\code{ota\_sync/coherent.py}, \code{--model twoway}, seed 0.}
+\end{frame}
+
+\begin{frame}{\proj{} A wrong branch is a stable illusion}
+The loop resolves the two candidates by picking the one nearest its
+current belief. Trace a wrong pick at acquisition, step by step:
+\begin{enumerate}
+\item \textbf{Acquisition.} True offset $\theta=1.94$\,rad; candidates
+$\{1.94,\ -1.20\}$. With no prior belief the rule ``nearest zero''
+picks $-1.20$ --- wrong by exactly $\pi$. The filter now believes
+$\hat\theta=\theta-\pi$.
+\item \textbf{Correction.} The loop drives the \emph{believed} phase to
+zero. Since belief is $\pi$ off, the \emph{true} relative phase parks
+at $\pi$: perfect anti-phase.
+\item \textbf{Every later measurement confirms the belief.} The
+half-difference again yields two candidates, $\{\approx0,\ \approx\pi\}$;
+the one nearest the (near-zero) belief is chosen --- always the shifted
+one. Innovations are tiny, covariance settles, lock indicators glow
+green.
+\item \textbf{Nothing internal can reveal it.} The measurement simply
+cannot distinguish $\theta$ from $\theta-\pi$ --- that information does
+not exist inside the loop. Only an \emph{external} observation (does
+the pair combine constructively?) carries the missing bit.
+\end{enumerate}
+This is why the resolution (next slide) must be a one-time
+\emph{combining} check, not more filtering.
+\srcline{Mechanism verified by direct trace in \code{teaching\_document.pdf} \S11.}
+\end{frame}
+
+\begin{frame}{\proj{} The $\pi$ ambiguity: how it hid, how it is resolved}
+\begin{alertblock}{Why every early run was (accidentally) fine}
+Phase advance per interval $=2\pi\times1500\,\mathrm{Hz}\times
+50\,\mathrm{ms}=75.000$ carrier cycles --- an \emph{exact integer}. So
+the initial 1.2\,rad offset reappeared unchanged at every acquisition,
+and since $1.2<\pi/2$, ``pick the candidate nearest zero'' happened to
+be right every time. A later configuration used 5\,ms steps: 7.5 cycles
+$\Rightarrow$ the acquisition phase landed at 1.94\,rad ($>\pi/2$)
+$\Rightarrow$ wrong branch $\Rightarrow$ stable lock at $\pi$, 0.01\%
+gain.
+\end{alertblock}
+\vspace{1ex}
+Resolution (as a deployment would): after lock, one coarse combining
+check --- constructive or destructive is \emph{one bit} of external
+information --- and flip the NCO by $\pi$ if destructive.
+\vspace{1ex}
+One further subtlety, learned the hard way: \textbf{do not reset the
+filter at the flip}. The half-difference measurement cannot tell $\pi$
+apart anyway (that is the whole ambiguity), so the filter's near-zero
+state is still valid --- it simply re-attaches to the true branch.
+Resetting it by $\pi$ re-creates the shifted lock.
+\srcline{Incident, diagnosis, fix: \code{teaching\_document.pdf} \S11; \code{--model micro --micro-pilots 9} reproduces it.}
+\end{frame}
+
+\begin{frame}{\proj{} Reimplementing \RN{}: does it reproduce?}
+\textbf{Level 1 --- statistics level} (their model, faithfully:
+Algorithms 1--2, MH weights, covariance mixing), at their setup
+($N{=}20$, connectivity 0.2, $T{=}0.1$\,ms, 0\,dB):
+\begin{center}
+\small
+\begin{tabular}{lcc}
+\toprule
+ & residual & \RN{, Eq.~27} bound\\
+\midrule
+DFPC & $8.0^\circ$ & $5.9^\circ$ (sparse-limit bound)\\
+KF-DFPC & $2.1^\circ$ & ---\\
+\bottomrule
+\end{tabular}
+\end{center}
+Consensus converges to the average; the residual sits at the bound's
+scale; filtering reduces it $\sim4\times$. \textbf{Both of the paper's
+claims reproduce in its own model.}
+\vspace{1ex}
+\textbf{Level 2 --- physical level} ($N{=}2$, full simulator): with two
+nodes the MH weight is $w_{12}=\tfrac12$, so ``consensus'' means
+\emph{each node retunes its NCO by half its measured offset toward the
+other}, both simultaneously --- now with real channels, latency, and
+quantization. What happens is the next slide.
+\srcline{\code{ota\_sync/dfpc.py}; tests in \code{tests/test\_ota\_sync.py}.}
+\end{frame}
+
+\begin{frame}{\proj{} Anti-phase capture, step by step}
+Naive OTA consensus: each node averages in its \emph{raw one-way}
+measurement --- which contains $\phi_c$ (slide 3.6). In the relative
+coordinate $r=\theta_A-\theta_B$, one round is
+\[
+r'=r+\tfrac12\wrapop(-r+\phi_c)-\tfrac12\wrapop(r+\phi_c).
+\]
+Walk through the default realization, $\phi_c=2.922$, $r_0=1.2$:
+\[
+\wrapop(1.2+2.92)=\wrapop(4.12)=-2.16
+\qquad
+\wrapop(-1.2+2.92)=+1.72
+\]
+\[
+r_1 = 1.2+\tfrac{1.72}{2}-\tfrac{-2.16}{2}=1.2+0.86+1.08=3.14=\pi .
+\]
+One argument wrapped ($4.12>\pi$), the other did not --- their
+disagreement is exactly $2\pi$, and half of it lands the pair at $\pi$.
+And $\pi$ is \emph{stable}: there, both wraps give the same value
+($-\pi\equiv\pi$), so $r'=\pi$ forever.
+\begin{block}{Verified three independent ways}
+full simulation ($r_1=-3.117$; deterministic across reruns) \ $\cdot$ \
+a four-line iteration of the equation, no radio code \ $\cdot$ \ a seed
+sweep matching the capture condition $|r_0|+|\phi_c|>\pi$ exactly
+\end{block}
+No wrap $\Rightarrow$ the halves cancel $\phi_c$ and the pair aligns:
+the failure is \emph{realization-dependent}, and invisible in \RN{}'s
+channel-free model.
+\srcline{\code{--model dfpc}, \code{reciprocal=False}; verification: \code{teaching\_document.pdf} \S12.1.}
+\end{frame}
+
+\begin{frame}{\proj{} Head-to-head under identical physics}
+\begin{center}
+\small
+\begin{tabular}{llccc}
+\toprule
+approach & origin & residual & gain & airtime\\
+\midrule
+two-tier micro-pilot & \proj{} & \textbf{28.1 mrad} & 99.98\% & 26.0\%\\
+hybrid 1-way + anchors & \proj{} & 33.8 mrad & 99.97\% & \textbf{14.9\%}\\
+two-way EKF & \proj{} & 80.8 mrad & 99.84\% & 19.1\%\\
+KF-DFPC + reciprocity & \RN{} alg.\ + our PHY & 82.8 mrad & 99.83\% & 19.1\%\\
+DFPC + reciprocity & \RN{} alg.\ + our PHY & 153.0 mrad & 99.42\% & 19.1\%\\
+DFPC naive & \RN{} as published & 3009 mrad & 0.68\% & 19.1\%\\
+\bottomrule
+\end{tabular}
+\end{center}
+\begin{itemize}
+\item ``+ reciprocity'' $=$ their update rule fed the channel-free
+half-difference (using the side channel \RN{} already assumes).
+\item \textbf{Unfiltered consensus is $2\times$ worse} because raw
+frequency noise (0.442\,Hz/measurement) feeds the NCOs directly and
+drifts $2\pi\!\cdot\!0.442\!\cdot\!0.05=139$\,mrad per interval;
+$139\oplus45=146$ predicted, 153 observed.
+\item \textbf{Filtered consensus $\approx$ our EKF} (82.8 vs.\ 80.8):
+two different well-designed filtered loops reach the \emph{same}
+physical floor --- the algorithm layer is interchangeable; the physics
+of slide 4.3 binds.
+\end{itemize}
+\srcline{\code{--model compare}, seed 0.}
+\end{frame}
+
+\begin{frame}{\proj{} Design 1: two-tier micro-pilots --- the reasoning}
+Chain of reasoning from the budget (slide on ablation):
+\begin{enumerate}
+\item Both dominant terms --- walk $kT$ and latency
+$\sigma_{\hat\omega}T$ --- scale with the correction period $T$.
+So correct more often.
+\item But the full 4.6\,ms frame exists for \emph{acquisition}:
+detection, timing, wide-range CFO. Once locked, timing drifts 0.016
+samples per 10\,ms and frequency is known to $\sim$0.2\,Hz --- none of
+that machinery is needed again.
+\item Therefore: keep the full two-way frame once per 50\,ms, and
+between frames send a \emph{bare} known sequence (ZC-255, 0.29\,ms) ---
+correlate it at the predicted arrival, after derotating by the current
+frequency estimate. Phase measured; corrections issued every
+sub-interval.
+\end{enumerate}
+\begin{center}
+\small
+\begin{tabular}{lcccc}
+\toprule
+micro-pilots $M$ per interval & 0 & 2 & 4 & 9\\
+\midrule
+residual (mrad) & 71.5 & 35.3 & 27.9 & 22.8\\
+airtime & 19.1\% & 22.6\% & 26.0\% & 34.6\%\\
+\bottomrule
+\end{tabular}
+\end{center}
+Scaling check: budget with $T\to T/(M{+}1)$ predicts 23--25\,mrad at
+$M{=}4$; measured 27.9. \ $3\times$ tighter for $+7\%$ airtime.
+\srcline{\code{ota\_sync/microsync.py}, \code{--model micro}. No counterpart in [RN23] (one pilot class; no airtime dimension).}
+\end{frame}
+
+\begin{frame}{\proj{} Design 2: hybrid calibration --- the reasoning}
+Look again at slide 3.8: the \emph{only} thing the return direction
+buys is separating $\theta$ from $\phi_c$. But the two behave
+completely differently in time:
+\begin{itemize}
+\item $\theta$ wanders at the oscillator rate --- fast, power-law noise
+\item $\phi_c$ between fixed stations is nearly constant
+\end{itemize}
+Paying double airtime every interval to re-measure a constant is waste.
+So: \textbf{estimate $\phi_c$ as a state of its own}, with a 3-state EKF
+over $[\theta,\omega,\phi_c]$:
+\begin{itemize}
+\item \textbf{One-way pilots} (cheap, every sub-interval) observe the
+\emph{sum} $\theta+\phi_c$. Alone, they cannot split it --- the
+direction $\theta{-}\phi_c$ is unobservable --- but the filter's priors
+can: fast innovations get attributed to $\theta$ (large $q_\theta$),
+slow ones to $\phi_c$ (small $q_c$).
+\item \textbf{Two-way anchors} (expensive, every $K$ intervals) observe
+$\theta$ and $\phi_c$ \emph{separately} (half-difference / half-sum)
+and re-pin the split before prior-based attribution drifts.
+\end{itemize}
+The design question ``how often must we pay for reciprocity?'' becomes
+``how fast does $\phi_c$ actually change?'' --- a \emph{channel}
+question, not an oscillator question.
+\srcline{\code{hybrid\_calibration/} package, \code{--model hybrid --anchor-every K}.}
+\end{frame}
+
+\begin{frame}{\proj{} How can priors split a sum the pilots cannot separate?}
+This deserves care, because it is the load-bearing idea of the hybrid
+--- and its failure mode.
+\begin{itemize}
+\item A one-way pilot observes only $\theta+\phi_c$: its sensitivity to
+the two states is \emph{identical} (Jacobian row $[1,\,0,\,1]$). From
+one-way data alone, the direction $\theta-\phi_c$ is invisible.
+\item So when a measurement disagrees with the prediction (an
+\emph{innovation}), the filter cannot know which state moved. It
+distributes the blame \textbf{in proportion to each state's prior
+uncertainty}: the Kalman gain is built from $PH^\top$, so $\theta$'s
+share $\approx P_{\theta\theta}$ and $\phi_c$'s share $\approx P_{cc}$.
+\item Between anchors, $P_{\theta\theta}$ grows fast (oscillator
+physics, large $q_\theta$) while $P_{cc}$ grows slowly (channel
+believed static, small $q_c$) --- fast innovations get charged to the
+clock, slow trends to the channel. \textbf{The prior is the separator.}
+\item This predicts the failure mode before running it: if the channel
+actually moves but $q_c$ says it cannot, the channel's share of blame
+is $\approx0$; the clock absorbs everything, and the NCO chases the
+channel. (The Doppler experiment two slides ahead shows exactly this.)
+\item Anchors measure $\theta$ and $\phi_c$ \emph{separately},
+collapsing both variances --- resetting the proportions before
+prior-based attribution drifts too far.
+\end{itemize}
+\srcline{Standard Kalman-gain structure applied to the 3-state model of \code{hybrid\_calibration/hybrid.py}.}
+\end{frame}
+
+\begin{frame}{\proj{} Hybrid validation 1: static channel}
+Prediction: with $\phi_c$ constant, anchors should barely matter.
+\begin{center}
+\begin{tabular}{cccc}
+\toprule
+anchor spacing $K$ & 1 & 5 & 20\\
+\midrule
+residual (mrad) & 31.8 & 32.9 & 34.0\\
+airtime & 22.6\% & 14.9\% & \textbf{13.5\%}\\
+\bottomrule
+\end{tabular}
+\end{center}
+{\footnotesize (fully two-way control: 27.9\,mrad at 26.0\% airtime)}
+\vspace{2ex}
+
+A $20\times$ change in reciprocity cadence moves the residual by
+2\,mrad, while sync airtime falls to 13.5\% --- below even the plain
+two-way loop's 19.1\%. On a static link, reciprocity can be paid for
+at 1\,Hz or slower. \textbf{Anchor cadence has decoupled from
+oscillator quality.}
+\srcline{Sweep in \code{hybrid\_calibration/README.md} (60 intervals, seed 0).}
+\end{frame}
+
+\begin{frame}{\proj{} Hybrid validation 2: moving channel (the converse)}
+Motion changes the path length continuously, which shifts the received
+frequency --- the \emph{Doppler} effect, $f_D=v/\lambda=3.05$\,Hz per
+m/s at 915\,MHz. A frequency shift on the channel means its phase
+$\phi_c$ now \emph{drifts}, up to $2\pi f_DT$ per interval --- so
+anchors and priors \emph{should} start to matter:
+\begin{center}
+\small
+\begin{tabular}{clcc}
+\toprule
+m/s & scheme & residual & gain\\
+\midrule
+0.2 & $K{=}5$, static prior & 446\,mrad & 95.3\%\\
+0.2 & $K{=}5$, matched prior & 235\,mrad & 98.7\%\\
+0.2 & $K{=}20$, static prior & 1752\,mrad & 55.1\%\\
+0.5 & $K{=}1$, static prior & 128\,mrad & 99.6\%\\
+0.5 & $K{=}1$, matched prior & \textbf{44\,mrad} & 99.95\%\\
+\bottomrule
+\end{tabular}
+\end{center}
+{\footnotesize (fully two-way controls: 43 / 33\,mrad --- immune, since
+their measurements are channel-free)}
+\vspace{1ex}
+
+Why the static prior fails: the filter must decide whether a drifting
+\emph{sum} means the clock moved or the channel moved. Told the channel
+cannot move, it blames the clock --- and steers the NCO to chase the
+channel. The matched prior ($\sigma_c\approx2\pi f_DT$) fixes the
+attribution; sparse anchors are only partly rescued, because priors
+re-attribute but only anchors truly \emph{separate}.
+\srcline{Sweep in \code{hybrid\_calibration/README.md} (60 intervals, seed 0).}
+\end{frame}
+
+\begin{frame}{\proj{} Why user CSI absorbs static biases: two lines of algebra}
+The claim from slide 3.7, now proved. At CSI time $t_0$ the user
+measures each station's \emph{effective} channel --- true channel times
+the station's carrier phase at that moment:
+\[
+g_i \;=\; h_i\,e^{j\phi_i(t_0)} .
+\]
+For joint transmission each station then weights its signal by
+$g_i^{\,*}$ (transmit ``against'' the measured channel). What the user
+receives later, at time $t$:
+\[
+\sum_i g_i^{\,*}\,h_i\,e^{j\phi_i(t)}
+\;=\;\sum_i |h_i|^2\,e^{\,j[\phi_i(t)-\phi_i(t_0)]}.
+\]
+Everything static --- the channel phase, the one-way sync bias, chain
+phases --- appears in both $\phi_i(t)$ and $\phi_i(t_0)$ and cancels
+\emph{exactly}. What misaligns the sum is only the \textbf{drift since
+the last CSI measurement}, and only its \emph{difference} between
+stations (a common drift rotates everything together).
+\vspace{1ex}
+
+Measured with the one-way loop's residual drift as $\phi_i(t)$: mean JT
+gain 100\% at 50\,ms CSI staleness, degrading only to 99.56\% at 1\,s.
+One-way sync $+$ ordinary CSI is fully sufficient for this application
+class.
+\srcline{Evaluation: \code{--csi-gain} (\code{ota\_sync/coherent.py}).}
+\end{frame}
+
+\begin{frame}{\proj{} Which loop for which application}
+Recall slide 3.7's split; now with numbers:
+\vspace{1ex}
+\begin{columns}[t]
+\column{0.48\textwidth}
+\textbf{CSI-aided (user feedback)}
+\begin{itemize}
+\item static biases absorbed by user CSI $\Rightarrow$ one-way suffices
+\item what matters: differential drift between CSI updates
+\item measured JT gain vs.\ CSI staleness: 100\% @ 50\,ms $\to$ 99.56\%
+@ 1\,s
+\end{itemize}
+\column{0.48\textwidth}
+\textbf{Open-loop (passive sensing)}
+\begin{itemize}
+\item carriers must align at the antennas $\Rightarrow$ two-way or
+hybrid required
+\item bounded closed-loop residual $\Rightarrow$ fixed 0.1--0.7\% gain
+cost at \emph{any} integration time
+\item dwell limited by target/channel dynamics, not by the stations'
+clocks
+\end{itemize}
+\end{columns}
+\vspace{2ex}
+The second column is the property passive coherent sensing needs: an
+\emph{uncorrected} pair of oscillators decorrelates and caps the dwell;
+a closed loop holds the error bounded forever.
+\srcline{JT evaluation: \code{--csi-gain} (\code{ota\_sync/coherent.py}).}
+\end{frame}
+
+\begin{frame}{Summary}
+\begin{enumerate}
+\item \textbf{Grading:} compare estimators to independent ground truth
+(oracle path), never to their own inputs --- a $100\times$ difference
+here \proj{}
+\item \textbf{The floor:} walk $\sqrt{kT}$ $+$ latency
+$\sigma_{\hat\omega}\ell T$ $+$ tracking; hand-predicted from physics,
+then verified by ablation. The latency term is absent from
+\RN{, Eq.~27} and unpublished through Dec.~2025 \proj{}
+\item \textbf{The paper:} reproduces faithfully in its own model; over
+a real channel its naive form is bistable (anti-phase capture --- walked
+through and triple-verified), and its filtered form, given reciprocity,
+meets our EKF at the same physical floor \proj{}
+\item \textbf{Moving the floor:} cadence, not energy --- micro-pilots
+(22.8--28\,mrad), and hybrid calibration (33\,mrad at 13--15\% airtime)
+whose reciprocity cadence is set by channel coherence, validated under
+Doppler in both directions \proj{}
+\end{enumerate}
+\vspace{1ex}
+\textbf{Open:} channel-Doppler 4th state; $N{>}2$ wrap-safe consensus;
+delayed-PLL literature check; \alert{hardware validation --- every
+number in this deck is simulation}.
+\end{frame}
+
+\begin{frame}{References}
+\footnotesize
+\textbf{The reference paper}
+\begin{itemize}
+\item[{[RN23]}] M.~Rashid, J.~A.~Nanzer, ``Frequency and Phase
+Synchronization in Distributed Antenna Arrays Based on Consensus
+Averaging and Kalman Filtering,'' \emph{IEEE Trans.\ Wireless Commun.}
+22(4):2789--2802, 2023. DOI 10.1109/TWC.2022.3213788.
+\end{itemize}
+\textbf{Classical results used in Part 1}
+\begin{itemize}
+\item D.~Chu, ``Polyphase codes with good periodic correlation
+properties,'' \emph{IEEE Trans.\ Inf.\ Theory}, 1972.
+\item T.~Schmidl, D.~Cox, ``Robust frequency and timing synchronization
+for OFDM,'' \emph{IEEE Trans.\ Commun.}, 1997.
+\item D.~Rife, R.~Boorstyn, ``Single-tone parameter estimation from
+discrete-time observations,'' \emph{IEEE Trans.\ Inf.\ Theory}, 1974.
+\item IEEE Std 1139 (frequency-stability metrics); J.~A.~Nanzer et al.,
+\emph{IEEE TMTT} 65(5), 2017 (the $18^\circ$/90\% threshold).
+\end{itemize}
+\textbf{This project} (all in this repository)
+\begin{itemize}
+\item \code{teaching\_document.pdf} (full derivations, same order as
+this deck); \code{simulation\_design.pdf};
+\code{paper\_review\_rashid\_nanzer.pdf}; \code{LITERATURE\_REVIEW.md}
+(verified 19-source prior-art pass); code: \code{ota\_sync/},
+\code{hybrid\_calibration/}; entry point \code{simulation.py}; 18 tests.
+\end{itemize}
+\end{frame}
+
+\end{document}
