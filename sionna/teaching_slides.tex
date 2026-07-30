@@ -67,7 +67,7 @@ Named citations $=$ classical results.
 \section{Foundations}
 
 \begin{frame}{1.0\quad Vocabulary for the whole lecture}
-\small
+\footnotesize
 \begin{description}
 \item[Carrier / phase] A radio transmits a pure high-frequency sine wave
 (here 915 million cycles per second) and imprints information on it.
@@ -187,6 +187,7 @@ of real oscillator behavior. The next three slides unpack it.
 \end{frame}
 
 \begin{frame}{2.2\quad The dominant noise: white FM $=$ a random walk in phase}
+\small
 ``White FM'' means the oscillator's \emph{frequency} jitters
 independently from sample to sample. Phase is the integral of frequency,
 so phase takes a small independent random step each sample --- a random
@@ -213,8 +214,9 @@ at $T=50$\,ms. Remember this number.
 \end{frame}
 
 \begin{frame}{2.3\quad The other noise types}
-\begin{center}
 \small
+\begin{center}
+\footnotesize
 \begin{tabular}{llll}
 \toprule
 type & what it is & effect & ADEV\\
@@ -246,6 +248,7 @@ alone.
 \end{frame}
 
 \begin{frame}{2.4\quad Grading oscillators: the Allan deviation}
+\small
 Ordinary variance fails for clocks: a drifting oscillator's frequency
 has no settled mean, so ``the variance of $y$'' just grows with how
 long you watch. The field's fix is the \textbf{Allan deviation}
@@ -303,7 +306,7 @@ Station A transmits a \emph{pilot}: a waveform B knows in advance. B
 receives $L$ samples $r_n=e^{j\phi}s_n+w_n$ (known $s_n$, noise $w_n$)
 and asks: what is $\phi$? Correlating $r$ against $s$ and taking the
 angle is the maximum-likelihood answer.
-\vspace{1ex}
+
 How good can any estimator be? The Cram\'er--Rao lower bound (CRLB) is
 the information-theoretic answer. Intuition: plot how probable the
 observed data is as a function of the assumed $\phi$ --- a curve peaking
@@ -316,7 +319,6 @@ variance smaller than its inverse:
 \]
 Each extra sample and each dB of SNR steepen the peak: twice the SNR or
 twice the samples $\Rightarrow$ half the variance.
-\vspace{1ex}
 \begin{block}{At this project's settings}
 20\,dB SNR ($\mathrm{SNR}=100$), $L=2\times2047$: bound $=1.1$\,mrad.
 Phase can be measured \emph{very} precisely --- if noise were the only
@@ -529,6 +531,7 @@ Two questions remain, and they are the last two foundations:
 \end{frame}
 
 \begin{frame}{4.2\quad The Kalman filter, as a trust dial}
+\small
 Each interval the filter holds a \emph{prediction} of $[\theta,\omega]$
 and receives a \emph{measurement}. It blends them:
 \[
@@ -550,7 +553,7 @@ interval. That steady-state uncertainty is a computable number, and it
 is about to matter. (One word to keep: the filter's belief just after
 absorbing a measurement is its \emph{posterior}; ``posterior
 uncertainty'' means the spread of that belief.)
-\vspace{1ex}
+
 Phase wraps at $\pm\pi$, so the filter observes $[\cos m,\sin m]$
 instead of $m$ (no wrap discontinuity) and re-linearizes within each
 update --- an \emph{extended} KF.
@@ -558,6 +561,7 @@ update --- an \emph{extended} KF.
 \end{frame}
 
 \begin{frame}{4.2b\quad The trust dial in action: a toy example}
+\footnotesize
 One tracked quantity. The truth wanders by variance $Q=4$ per step
 (steps of typical size 2); each measurement has variance $R=5$ (typical
 error 2.24). Track the filter's own uncertainty $P$:
@@ -635,153 +639,166 @@ Filtering,'' \emph{IEEE Transactions on Wireless Communications},
 vol.~22, no.~4, pp.~2789--2802, April 2023. (arXiv:2201.08931; PDF in
 this repository.)
 \end{block}
-Its motivation, from its introduction \RN{, \S I}:
-\begin{itemize}
-\item \emph{Closed-loop} array methods (nodes adjust using feedback bits
-from the destination) only work when the destination can talk back ---
-useless for remote sensing or arbitrary beam steering. So the paper
-targets \emph{open-loop} arrays: nodes align \textbf{with each other
-only}.
-\item Prior open-loop work used a primary--secondary architecture (one
-master broadcasts a reference) --- which dies with the master. Prior
-\emph{decentralized} work aligned \textbf{frequency only}.
-\item This paper's goal: decentralized \textbf{frequency-and-phase}
-alignment, with no leader, plus a closed-form prediction of the residual
-error.
-\end{itemize}
+The gap it fills, from its introduction \RN{, \S I}:
+\begin{center}
+\small
+\begin{tabular}{lll}
+\toprule
+prior approach & how nodes align & why it falls short\\
+\midrule
+closed-loop & feedback bits from the destination & destination must talk back\\
+primary--secondary & one master broadcasts a reference & dies with the master\\
+decentralized & neighbors average & \textbf{frequency only}, no phase\\
+\bottomrule
+\end{tabular}
+\end{center}
+\vspace{1ex}
+\textbf{This paper's goal:} no destination, no master --- every node
+aligns \emph{frequency and phase} purely by averaging with its
+neighbors, plus a \textbf{closed-form prediction} (Eq.~27) of the
+residual error that remains.
 \end{frame}
 
 \begin{frame}{5.2\quad \RN{} The network picture}
-\begin{itemize}
-\item $N$ nodes ($N=5$ to 400 in their experiments), each a radio with
-its own oscillator. Nodes that can hear each other are joined by an edge
-of an undirected graph $\mathcal G$.
-\item \textbf{Connectivity} $c\in(0,1]$: the fraction of all
-$N(N{-}1)/2$ possible edges that exist. $c=1$: everyone hears everyone;
-$c=0.05$: sparse, each node hears few neighbors. Sparse graphs are the
-realistic and difficult case, and much of the paper is about them.
-\item Once per update interval $T$, every node broadcasts and every node
-updates --- \emph{synchronized rounds}, which is why the paper assumes
-time synchronization is already solved.
-\item Simultaneous broadcasts are separated by TDMA (time slots): with
-$D$ neighbors on average, each node's observation window shrinks from
-$L$ samples to $L/D$ --- degrading the estimation errors below
-\RN{, Eqs.~18--21}.
-\end{itemize}
+\textbf{The cast:} $N$ radios ($N=5$ to 400 in their experiments), each
+with its own free-running oscillator. Draw an edge between any two that
+can hear each other: an undirected graph $\mathcal G$. No leader, no
+destination --- the only goal is that all $N$ agree \emph{with each
+other}.
+\vspace{1ex}
+\begin{description}
+\item[{Connectivity $c\in(0,1]$}] the fraction of possible edges that
+exist. $c=1$: everyone hears everyone. $c=0.05$: each node hears only a
+few neighbors --- the realistic, difficult case most of the paper is
+about.
+\item[Rounds] once per interval $T$, every node broadcasts, listens,
+and updates --- all in lockstep. (This is why the paper assumes time
+synchronization is already solved.)
+\item[TDMA] neighbors take turns transmitting, so with $D$ neighbors
+each one is heard for only $L/D$ samples --- less data per estimate,
+degrading the measurement errors below \RN{, Eqs.~18--21}.
+\end{description}
 \srcline{[RN23] \S II--III; their simulation parameters: $f_c=1$\,GHz, $f_s=10$\,MHz, $T=0.1$\,ms, SNR $=0$\,dB.}
 \end{frame}
 
 \begin{frame}{5.3\quad \RN{} What each node measures}
-Each node broadcasts its bare oscillator signal, and neighbors estimate
-its frequency and phase from $L$ received samples:
+\small
+Each node broadcasts its oscillator's \emph{bare tone}; each neighbor
+estimates that tone's frequency and phase from $L$ noisy samples:
 \[
 x_n(t)=e^{j(2\pi f_n t+\theta_n)}+\text{noise}
 \qquad\text{\RN{, Eq.~15}}
 \]
-with estimation errors at the CRLBs (slide 3.1's bound, plus its
-frequency analog):
+The paper takes the estimates to be exactly as good as theory allows
+--- the CRLBs (slide 3.1's bound, plus its frequency analog):
 \[
-\sigma^m_f=\sqrt{\frac{6}{(2\pi)^2L^3\,\mathrm{SNR}}}\cdot f_s
-\qquad
 \sigma^m_\theta=\sqrt{\frac{2}{L\,\mathrm{SNR}}}
+\qquad
+\sigma^m_f=\sqrt{\frac{6}{(2\pi)^2L^3\,\mathrm{SNR}}}\cdot f_s
 \qquad\text{\RN{, Eqs.~16--17}}
 \]
-(Why $L^3$ for frequency: more samples average the noise --- one factor
-of $L$ --- \emph{and} lengthen the observation window, which improves a
-\emph{rate} quadratically, exactly the baseline effect of slide 3.2 ---
-two more factors of $L$.)
-\begin{alertblock}{Read Eq.~15 carefully --- this is the paper's deepest assumption}
-The oscillator is observed \emph{directly in noise}. There is no
-propagation channel between the nodes: no delay phase, no multipath.
-The identifiability problem of slide 3.6 --- that a real receiver sees
-oscillator \emph{plus} channel phase --- does not exist in this model.
-All channel and geometry phase is bundled into one constant
-$\theta^e_n$, ``assumed corrected'' by some other mechanism.
+(Why $L^3$ for frequency: $L$ samples to average the noise, times a
+window $L$ long over which a \emph{rate} is measured --- slide 3.2's
+baseline effect, squared.)
+\begin{alertblock}{The model's deepest assumption --- look at Eq.~15 again}
+The tone arrives \emph{with no channel}: no propagation delay, no
+multipath. A real receiver would measure $\theta_n+\phi_c$ and could
+not split them (slide 3.6); here $\phi_c$ simply does not exist ---
+bundled into a constant ``assumed corrected'' by some other mechanism.
 \end{alertblock}
+\vspace{-2pt}
 Part 3 measures what happens when this assumption meets a real channel.
 \srcline{[RN23] \S II-B.}
 \end{frame}
 
-\begin{frame}{5.4\quad \RN{} The error model, part 1: the oscillators}
-Their oscillator spec, in the Allan-deviation form of slide 2.4:
+\begin{frame}{5.4\quad \RN{} The error budget, part 1: oscillator drift}
+\textbf{Question this slide answers:} how much does each oscillator
+wander between two updates?
+\vspace{1ex}
+Their spec is an Allan-deviation curve (slide 2.4) for an ordinary
+quartz TCXO --- white FM ($\beta_1$) plus random-walk FM ($\beta_2$),
+no flicker:
 \[
 \sigma_f=f_c\sqrt{\beta_1/T+\beta_2T},\qquad
 \beta_1=\beta_2=5\times10^{-19}
 \qquad\text{\RN{, Eq.~2}}
 \]
-($\beta_1$: white FM; $\beta_2$: random-walk FM; values for an ordinary
-quartz TCXO --- the few-dollar temperature-compensated crystal of slide
-2.4. No flicker term.)
-\vspace{1ex}
-Evaluate it at their setup ($f_c=1$\,GHz, $T=10^{-4}$\,s):
-\[
-\sigma_f=10^9\sqrt{5\times10^{-15}+5\times10^{-23}}\approx70.7\ \text{Hz}
-\]
-Two error terms follow per interval:
-\begin{itemize}
-\item \textbf{Drift phase} $2\pi\sigma_fT=2\pi\cdot70.7\cdot10^{-4}
-=44.4\ \text{mrad}=2.55^\circ$: the phase the frequency offset sweeps
-out before the next update.
-\item \textbf{Intra-interval drift} $\pi T\sigma_f=1.27^\circ$: the
-frequency is not even constant within the interval; integrating its
-linear change leaves this \RN{, Eqs.~3--4, 13}.
-\end{itemize}
+At their setup ($f_c=1$\,GHz, $T=0.1$\,ms) this gives
+$\sigma_f\approx70.7$\,Hz: between two updates, a node's frequency
+typically moves by 70.7\,Hz. That motion costs \emph{phase} in two
+ways per interval \RN{, Eqs.~3--4, 13}:
+\begin{center}
+\small
+\begin{tabular}{llc}
+\toprule
+term & what it is & size\\
+\midrule
+drift phase\ $2\pi\sigma_fT$ & phase the new offset sweeps before the next update & $2.55^\circ$\\
+intra-interval\ $\pi\sigma_fT$ & the frequency keeps moving \emph{during} the interval & $1.27^\circ$\\
+\bottomrule
+\end{tabular}
+\end{center}
 \srcline{[RN23] \S II-B; numerical evaluation: this deck.}
 \end{frame}
 
-\begin{frame}{5.5\quad \RN{} The error model, part 2: jitter and estimation}
-\textbf{Phase jitter.} A spec-sheet number: the oscillator's total
-phase-noise power, $A=-53.46$\,dBc (``dBc'' $=$ decibels relative to
-the carrier's own power). It converts to a jitter of
-$\sigma_\theta=\sqrt{2\cdot10^{A/10}}=2.7$\,mrad $=0.15^\circ$,
-\emph{drawn fresh each interval} \RN{, Eq.~5} --- no memory across
-intervals (contrast slide 2.2's continuous walk).
-\vspace{1ex}
-\textbf{Estimation errors} at their setup ($L=Tf_s=1000$ samples,
-SNR$=0$\,dB$=1$):
-\[
-\sigma^m_f=123\ \text{Hz}\ \Rightarrow\ 2\pi\sigma^m_fT=4.44^\circ
-\qquad\qquad
-\sigma^m_\theta=44.7\ \text{mrad}=2.56^\circ
-\]
-\begin{block}{Now the budget is visible --- and it explains the paper's agenda}
-Per interval: frequency-estimation $4.44^\circ$ \ $>$ \ phase-estimation
-$2.56^\circ$ $\approx$ drift $2.55^\circ$ \ $>$ \ intra-drift
-$1.27^\circ$ \ $\gg$ \ jitter $0.15^\circ$. At short $T$ the loop is
-\textbf{estimation-dominated}: only 1000 noisy samples per look. That is
-precisely the regime where filtering (memory) should help --- which is
-why the paper's second algorithm exists.
+\begin{frame}{5.5\quad \RN{} The error budget, part 2: the full ranking}
+\small
+Two more error sources complete the list:
+\begin{itemize}
+\item \textbf{Phase jitter}: the spec sheet's total phase-noise power,
+$A=-53.46$\,dBc, converts to $\sigma_\theta=2.7$\,mrad $=0.15^\circ$
+--- \emph{redrawn fresh each interval}, no memory \RN{, Eq.~5}
+(contrast slide 2.2's continuous walk).
+\item \textbf{Measurement errors}: slide 5.3's CRLBs at their numbers
+($L=Tf_s=1000$ samples, SNR $=0$\,dB): $\sigma^m_f=123$\,Hz,
+$\sigma^m_\theta=44.7$\,mrad.
+\end{itemize}
+\begin{block}{All five per-interval error terms, ranked}
+\centering
+\begin{tabular}{llc}
+1. & frequency \emph{measurement}, integrated: $2\pi\sigma^m_fT$ & $4.44^\circ$\\
+2. & phase \emph{measurement}: $\sigma^m_\theta$ & $2.56^\circ$\\
+3. & oscillator drift: $2\pi\sigma_fT$ & $2.55^\circ$\\
+4. & intra-interval drift: $\pi\sigma_fT$ & $1.27^\circ$\\
+5. & jitter: $\sigma_\theta$ & $0.15^\circ$\\
+\end{tabular}
 \end{block}
+The ranking explains the paper's agenda: the biggest term is
+\emph{measurement} error --- only 1000 noisy samples per look. And a
+measurement-dominated loop is exactly where memory (filtering) helps,
+which is why the paper's second algorithm exists (slide 5.11).
 \srcline{[RN23] Eqs.~5, 16--17; numerical evaluation: this deck.}
 \end{frame}
 
-\begin{frame}{5.6\quad \RN{} DFPC, the algorithm itself}
-One round of \emph{decentralized frequency and phase consensus}, per
-their Algorithm 1:
+\begin{frame}{5.6\quad \RN{} DFPC: the algorithm is one averaging step, repeated}
+\small
+One round of \emph{decentralized frequency and phase consensus}
+(their Algorithm 1) --- three steps:
 \begin{enumerate}
-\item Every oscillator degrades: frequencies pick up drift
-$\mathcal N(0,\sigma_f^2)$; phases pick up intra-interval drift and
+\item \textbf{Drift.} Every oscillator degrades: frequency picks up
+$\mathcal N(0,\sigma_f^2)$; phase picks up intra-interval drift and
 jitter.
-\item Every node broadcasts; every neighbor \emph{estimates} what it
-hears, adding $\mathcal N(0,(\sigma^m_f)^2)$ and
+\item \textbf{Measure.} Every node broadcasts its tone; every neighbor
+estimates it, with errors $\mathcal N(0,(\sigma^m_f)^2)$ and
 $\mathcal N(0,(\sigma^m_\theta)^2)$.
-\item Every node replaces its own frequency and phase by a
-\textbf{weighted average of the estimates of its neighbors (and
-itself)}:
+\item \textbf{Average.} Every node \emph{replaces} its own frequency
+and phase by a weighted average of what it heard, plus its own value:
 \[
 \mathbf f(k)=\mathbf W\,\mathbf f(k{-}1),\qquad
 \boldsymbol\theta(k)=\mathbf W\,\boldsymbol\theta(k{-}1)
 \qquad\text{\RN{, Eq.~8}}
 \]
+(The matrix is bookkeeping: row $n$ is nonzero only at node $n$'s
+neighbors, so everything is computed locally. No leader.)
 \end{enumerate}
+\vspace{0.5ex}
+Two things step 3 quietly builds in:
 \begin{itemize}
-\item The matrix form is bookkeeping: row $n$ has nonzero entries only
-for node $n$'s neighbors, so each node computes locally. No leader.
-\item For plain DFPC \textbf{the broadcast waveform is the message}: no
-data link exists anywhere.
-\item Note also what step 3 is \emph{not}: there is no NCO, no latency
---- the new value simply \emph{is} the node's state (instantaneous
-actuation, slide 4.3's term absent by construction).
+\item \textbf{No data link anywhere}: the broadcast waveform itself is
+the entire message.
+\item \textbf{No actuator}: the averaged value simply \emph{is} the
+node's new state --- no NCO, no latency (slide 4.3's term absent by
+construction).
 \end{itemize}
 \srcline{[RN23] Algorithm 1, \S III.}
 \end{frame}
@@ -814,64 +831,74 @@ enough for the busier endpoint is safe for both.
 \end{frame}
 
 \begin{frame}{5.8\quad \RN{} Why and how fast consensus converges}
-Think of each round as a blurring pass over the network: the overall
-average survives untouched, and every \emph{pattern of disagreement}
-fades. Linear algebra makes that exact: $\mathbf W$'s largest
-eigenvalue is 1, belonging to the ``everyone equal'' direction
-$\mathbf 1=(1,\dots,1)$; every other pattern shrinks per round by at
-most $\lambda_2$, the second-largest eigenvalue magnitude --- the
-survival factor of the most stubborn disagreement pattern:
-\[
-\mathbf W^{I}\ \longrightarrow\ \tfrac1N\mathbf{11}^\top
-\qquad\text{(all states $\to$ the initial average)}
-\]
+\small
+Each round is a \textbf{blurring pass} over the network: the overall
+average passes through untouched, while every \emph{pattern of
+disagreement} fades.
+\vspace{0.5ex}
 \begin{itemize}
-\item Dense graph: $\lambda_2$ small, disagreement dies in a few rounds.
-Sparse graph: $\lambda_2\to1$, information creeps across the network.
-\item Their trajectories \RN{, Figs.~1--2}: initial frequency spread of
-$\pm100$\,ppm collapses within tens of iterations at $c=0.2$; larger
-$N$ at fixed $c$ converges \emph{faster} (each node has $D=c(N{-}1)$
-neighbors --- more neighbors, better local averages).
-\item Converged total phase error falls with $N$ toward a floor
-\RN{, Fig.~3} --- averaging over more neighbors suppresses the
-per-node errors, until the injected noise floor takes over.
+\item Exactly: $\mathbf W$'s largest eigenvalue is 1, for the
+``everyone equal'' direction; every disagreement pattern shrinks by at
+least a factor $\lambda_2$ (the second-largest eigenvalue) per round.
+Repeated rounds therefore drive every state to the initial average:
+\[
+\mathbf W^{I}\ \longrightarrow\ \tfrac1N\mathbf{11}^\top .
+\]
+\item \textbf{Dense graph}: $\lambda_2$ small --- disagreement dies in
+a few rounds. \textbf{Sparse graph}: $\lambda_2\to1$ --- information
+must creep across the network, convergence is slow.
+\end{itemize}
+\vspace{0.5ex}
+What their figures show:
+\begin{itemize}
+\item An initial frequency spread of $\pm100$\,ppm collapses within
+tens of iterations at $c=0.2$ \RN{, Figs.~1--2}.
+\item Larger $N$ at fixed $c$ converges \emph{faster}: each node has
+$D=c(N{-}1)$ neighbors, so its local average is better.
+\item Converged error falls with $N$ toward a floor \RN{, Fig.~3} ---
+set by the noise injected each round, which is the next slide.
 \end{itemize}
 \srcline{[RN23] \S III-A, Figs.~1--3.}
 \end{frame}
 
 \begin{frame}{5.9\quad \RN{} Why the error does \emph{not} go to zero}
-With noiseless oscillators and perfect estimates, mixing would converge
-exactly and stay. But \emph{every round injects fresh errors} (steps
-1--2 of the algorithm), so the network reaches an equilibrium between
-two competing rates:
+Mixing alone would converge exactly and stay. But steps 1--2 of
+\emph{every} round inject fresh drift and fresh measurement error. The
+network settles at an \textbf{equilibrium between two rates}:
 \begin{center}
-mixing removes disagreement at $\sim(1-\lambda_2)$ per round\\
-vs.\ injection adds $\sigma_e$ per round
+mixing \emph{removes} disagreement at $\sim(1-\lambda_2)$ per round\\[2pt]
+vs.\quad injection \emph{adds} $\sigma_e$ of new error per round
 \end{center}
-Formally: the accumulated error after $I$ rounds is
-$\sum_i\mathbf W^{i+1}\mathbf e_{I-i}$; measured relative to the network
-average, its standard deviation is bounded by
+Formally, the paper sums what survives of each past injection
+($\sum_i\mathbf W^{i+1}\mathbf e_{I-i}$) and bounds the residual,
+relative to the network average, by
 $\sigma_e\sqrt{\sum_m\lambda_2^{2m}}$ \RN{, Eqs.~23--26}.
 \begin{itemize}
-\item \textbf{Dense}: the geometric sum is small --- equilibrium well
-below the injection level.
-\item \textbf{Sparse} ($\lambda_2\to1$): the sum is large --- errors
-linger as long as they keep being replaced, and the equilibrium
-saturates \emph{at the injected level itself}.
+\item \textbf{Dense}: old errors are mixed away quickly ---
+equilibrium well below $\sigma_e$.
+\item \textbf{Sparse} ($\lambda_2\to1$): each error lingers until the
+next replaces it --- equilibrium saturates \emph{at the injection
+level itself}.
 \end{itemize}
-In the sparse limit the residual is therefore just the
-root-sum-of-squares of the five per-round error terms --- next slide.
+\begin{block}{The punchline}
+In the sparse (realistic) limit, the residual is simply the
+root-sum-of-squares of the five per-round terms of slide 5.5 ---
+assembled on the next slide as Eq.~27.
+\end{block}
 \srcline{[RN23] \S III-A.}
 \end{frame}
 
 \begin{frame}{5.10\quad \RN{} Eq.~27, assembled from the numbers we already have}
 \[
 \sigma_{\phi,\mathrm{total}}
-=\sqrt{(2\pi\sigma_fT)^2+(2\pi\sigma^m_fT)^2+(\pi T\sigma_f)^2
-+(\sigma^m_\theta)^2+\sigma_\theta^2}
+=\sqrt{\underbrace{(2\pi\sigma_fT)^2}_{\text{drift}}
++\underbrace{(2\pi\sigma^m_fT)^2}_{\text{freq.\ est.}}
++\underbrace{(\pi T\sigma_f)^2}_{\text{intra}}
++\underbrace{(\sigma^m_\theta)^2}_{\text{phase est.}}
++\underbrace{\sigma_\theta^2}_{\text{jitter}}}
 \qquad\text{\RN{, Eq.~27}}
 \]
-At their setup, the five terms are the ones computed on slides 5.4--5.5:
+Every term was already computed on slides 5.4--5.5; plug them in:
 \[
 \sqrt{(2.55^\circ)^2+(4.44^\circ)^2+(1.27^\circ)^2+(2.56^\circ)^2+(0.15^\circ)^2}
 =5.9^\circ
@@ -890,28 +917,27 @@ round). These absences are exactly where Part 3 will press.
 \end{frame}
 
 \begin{frame}{5.11\quad \RN{} KF-DFPC: filter first, then average}
-The frequency-estimation term dominates because each look uses only
-1000 noisy samples --- but the \emph{truth changes slowly} between
-looks. That is exactly when the trust dial of slide 4.2 says: use
-memory. So each node runs a two-state Kalman filter on its own noisy
-observations before the network averages:
-\begin{itemize}
-\item State $[f_n,\theta_n]$; process covariance $\mathbf Q$ built from
-the drift and jitter statistics of slides 5.4--5.5 (its off-diagonal
-term encodes that a frequency kick also moves the phase it integrates
-into) \RN{, Eq.~29}
-\item Measurement covariance $=$ the CRLBs \RN{, Eq.~31}; standard
-predict/update \RN{, Eqs.~33, 35--36}
-\item Then consensus-average the \emph{posterior means}, and mix the
-covariance entries with squared weights so each node's filter knows how
-uncertain its mixed prior is \RN{, Eqs.~38--39}
-\end{itemize}
-\begin{alertblock}{Two structural facts}
+\small
+Slide 5.5's budget is dominated by \emph{measurement} error, and the
+truth changes slowly between looks --- exactly when the trust dial of
+slide 4.2 says: use memory. KF-DFPC changes one thing: each node
+\textbf{Kalman-filters its own measurements before the network
+averages}.
+\begin{enumerate}
+\item \textbf{Filter} (per node): two states $[f_n,\theta_n]$.
+$\mathbf Q$ comes from the drift/jitter statistics of slides 5.4--5.5
+(its off-diagonal term: a frequency kick also moves the phase it
+integrates into) \RN{, Eq.~29}; $\mathbf R$ $=$ the CRLBs \RN{,
+Eq.~31}; standard predict/update \RN{, Eqs.~33, 35--36}.
+\item \textbf{Average} (as before): consensus on the \emph{posterior
+means}; the covariances are mixed with squared weights, so each
+node's filter knows how uncertain its new prior is \RN{, Eqs.~38--39}.
+\end{enumerate}
+\begin{alertblock}{The two costs of that one change}
 (1) Posterior means \emph{and covariances} must now travel between
 nodes: KF-DFPC needs an error-free \textbf{data side channel}, which
-plain DFPC did not. (2) \textbf{No closed form} is derived for
-KF-DFPC's residual --- it is characterized by simulation against
-Eq.~27.
+plain DFPC did not. (2) \textbf{No closed form} is derived for its
+residual --- it is characterized only by simulation against Eq.~27.
 \end{alertblock}
 \srcline{[RN23] \S IV, Algorithm 2.}
 \end{frame}
@@ -1027,8 +1053,9 @@ is what made the ``rerun and diff'' verification step meaningful.
 \end{frame}
 
 \begin{frame}{\proj{} How the code is organized}
-\begin{center}
 \small
+\begin{center}
+\footnotesize
 \begin{tabular}{ll}
 \toprule
 module & contents\\
@@ -1087,7 +1114,7 @@ observed 153.
 Everything from Part 1 is implemented at the waveform level and nothing
 is handed to the receiver:
 \begin{center}
-\small
+\footnotesize
 \begin{tabular}{llll}
 \toprule
 carrier / rate & 915\,MHz / 1\,MS/s & interval $T$ & 50\,ms\\
@@ -1269,6 +1296,7 @@ quantization. What happens is the next slide.
 \end{frame}
 
 \begin{frame}{\proj{} Anti-phase capture, step by step}
+\small
 Naive OTA consensus: each node averages in its \emph{raw one-way}
 measurement --- which contains $\phi_c$ (slide 3.6). In the relative
 coordinate $r=\theta_A-\theta_B$, one round is
@@ -1390,6 +1418,7 @@ question, not an oscillator question.
 \end{frame}
 
 \begin{frame}{\proj{} How can priors split a sum the pilots cannot separate?}
+\small
 This deserves care, because it is the load-bearing idea of the hybrid
 --- and its failure mode.
 \begin{itemize}
