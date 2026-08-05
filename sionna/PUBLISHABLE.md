@@ -147,7 +147,8 @@ subfield has never computed because it validates without a channel.
 
 ---
 
-## 3. Uncertainty-driven pilot scheduling (proposed, not built)
+## 3. Uncertainty-driven pilot scheduling — BUILT AND MEASURED
+(2026-08-05, `ota_sync/scheduled.py`, `smart_sync_study.py`)
 
 **Idea.** Every measured deployment shows stations are heterogeneous
 (path-loss SNR spread 15-23 dB; oscillator classes differ), yet every
@@ -171,6 +172,43 @@ tau_k to T.
 (event-triggered Kalman filtering exists in control theory; fixed
 cadence is universal in the sync literature). ~A day to build: the
 scheduler loop plus fixed-vs-adaptive comparison on `--sweep-stations`.
+
+**MEASURED RESULTS (N=6 star, 60 intervals, seed 0, counted detection
+at two 1.2 km edge waypoints):**
+
+    policy                  sync airtime   array gain   edge Pd
+    uniform                     95.6%        99.4%      99.8 / 99.1%
+    scheduled (flat 314mrad)    38.2%        98.7%      99.8 / 99.1%
+    scheduled (task-aware)      44.0%        98.0%      99.8 / 99.1%
+
+Headline: the scheduler returns ~55-60% of the channel at IDENTICAL
+counted detection performance. Budget steering verifiably works
+(200-mrad-budget stations hold ~130-140 mrad; 600-mrad stations ride
+at 215-299), though at this uncontended operating point task-aware
+does not beat flat on airtime — its value case is a contended channel
+(more stations than capacity) and should be demonstrated there.
+
+**Two failure modes discovered by simulation (paper material):**
+(1) coasting during acquisition is fatal — residual CFO turns one
+skipped interval into an unrecoverable drift, so the scheduler must
+force service until settled; (2) coasting can drift a station across
+the pi branch of the two-way half-difference — the 1-bit combining
+check must be PERIODIC, not one-shot (independently discovered in the
+decentralized mesh: same mechanism, two architectures).
+
+**Original task-aware framing:** The clutter-limited
+detection runs showed detection is a cliff: inside ~1 km even the
+UNSYNCHRONIZED array detects (100 vs 95%); sync only earns its keep in
+the coverage-edge annulus. So allocate pilots by (station uncertainty)
+x (detection utility of that station's coherence for the current
+coverage annulus / target hypothesis), priced in airtime. Headline:
+same detection coverage at a fraction of the sync airtime; the airtime
+wall moves right accordingly. All ingredients exist in the repo:
+per-station Kalman uncertainty, the coasting-time rule from result 1,
+airtime accounting, and the counted-Pd pipeline as the utility oracle.
+Prior-art caveat: ISAC resource allocation is a hot field for POWER
+and BEAMS - sync-as-allocated-resource appears open, but run a
+dedicated literature pass before writing.
 
 ---
 

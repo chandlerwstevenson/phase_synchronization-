@@ -571,3 +571,20 @@ def test_clutter_model_produces_clutter_limited_regime():
         * 1e6
     )
     assert power.max() / noise > 1e3  # > 30 dB CNR
+
+
+def test_scheduled_sync_saves_airtime_at_matching_coherence():
+    from ota_sync.scheduled import run_scheduled_star
+
+    settings = SDRSimulationConfig(num_iterations=20, seed=0, device="cpu")
+    uniform = run_scheduled_star(settings, num_stations=4, policy="uniform")
+    scheduled = run_scheduled_star(
+        settings, num_stations=4, policy="scheduled"
+    )
+
+    # The scheduler must return a large share of the channel while
+    # keeping the array within the coherence class of the uniform
+    # baseline (budgets default to the 314 mrad threshold).
+    assert scheduled.airtime_used_fraction < 0.7 * uniform.airtime_used_fraction
+    assert scheduled.mean_array_gain > 0.9
+    assert uniform.mean_array_gain > 0.95

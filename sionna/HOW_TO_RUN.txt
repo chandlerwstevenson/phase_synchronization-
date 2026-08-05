@@ -376,6 +376,31 @@ SCALING TO N BASE STATIONS
     (dfpc/kfdfpc) stay 2-node at the physical layer.
 
 ----------------------------------------------------------------
+SMART ALLOCATION OF PHASE SYNC (scheduled pilots)
+----------------------------------------------------------------
+
+    Uniform schedules waste the channel: every station gets a
+    pilot every interval whether it needs one or not. The
+    scheduler services a station ONLY when its Kalman-predicted
+    uncertainty approaches its phase budget, and budgets are
+    task-aware (tight for stations whose ray-traced legs matter
+    at the detection coverage edge, loose elsewhere):
+
+        .venv/bin/python smart_sync_study.py
+
+    Runs uniform vs flat-scheduled vs task-aware on the same
+    star, prints airtime/gain/residuals, and verifies at the
+    detection edge with counted waveform trials. Measured
+    (N=6): uniform 95.6% airtime @ 99.4% gain; scheduled ~41%
+    airtime @ 98.6% gain — more than half the channel returned
+    for under one point of gain. Two real failure modes were
+    found and fixed by simulation: never coast during
+    acquisition (residual CFO makes one skipped interval
+    fatal), and coasting can drift a station across the pi
+    branch of the two-way half-difference, so the 1-bit
+    combining check must be periodic, not one-shot.
+
+----------------------------------------------------------------
 DRONE-DETECTION VIABILITY (the application layer)
 ----------------------------------------------------------------
 
