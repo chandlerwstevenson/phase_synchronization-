@@ -305,11 +305,13 @@ class ConsensusOTAResult:
     """Metrics from a two-node consensus run over the sampled-IQ link."""
 
     true_phase: torch.Tensor
+    physical_relative_frequency: torch.Tensor
     post_correction_phase: torch.Tensor
     post_correction_frequency: torch.Tensor
     coherent_gain: torch.Tensor
     detected: torch.Tensor
     correction_active: torch.Tensor
+    airtime_fraction: float
     device: torch.device
 
     @property
@@ -449,6 +451,9 @@ def run_consensus_ota_simulation(
 
     capture_samples = link_ab.input_length + link_ab.l_tot - 1
     remainder_samples = max(0, interval_samples - 2 * capture_samples)
+    airtime_fraction = (
+        2.0 * capture_samples / (settings.sync_interval * settings.sample_rate)
+    )
     pending: dict[int, dict[str, torch.Tensor]] = {}
     carried_lo_walk = torch.zeros((), dtype=REAL_DTYPE, device=device)
     flicker_previous = torch.zeros((), dtype=REAL_DTYPE, device=device)
@@ -467,6 +472,7 @@ def run_consensus_ota_simulation(
         name: []
         for name in (
             "true_phase",
+            "physical_relative_frequency",
             "post_correction_phase",
             "post_correction_frequency",
             "coherent_gain",
@@ -502,6 +508,9 @@ def run_consensus_ota_simulation(
                 * 1e6
             )
 
+        history["physical_relative_frequency"].append(
+            (physical_a - physical_b).clone()
+        )
         relative_state = node_a.state - node_b.state
         capture_ab = link_ab.capture(node_a, node_b, iteration, sfo_forward)
         node_a.state[0] = wrap_phase(node_a.state[0] + capture_ab.lo_walk_end)
@@ -633,5 +642,6 @@ def run_consensus_ota_simulation(
         **{
             name: torch.stack(values).detach().cpu() for name, values in history.items()
         },
+        airtime_fraction=airtime_fraction,
         device=device,
     )

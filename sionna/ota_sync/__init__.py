@@ -36,8 +36,28 @@ from .dfpc import (
     run_consensus_stats,
 )
 from .microsync import MicroSyncResult, run_micro_two_way_simulation
+from .network import (
+    NetworkLink,
+    NetworkSyncResult,
+    place_stations,
+    run_network_simulation,
+)
+from .oscillators import (
+    LEGACY_PROFILE_NAME,
+    OSCILLATOR_PROFILES,
+    OscillatorProfile,
+    resolve_oscillator_noise,
+)
 
 __all__ = [
+    "LEGACY_PROFILE_NAME",
+    "NetworkLink",
+    "NetworkSyncResult",
+    "OSCILLATOR_PROFILES",
+    "OscillatorProfile",
+    "place_stations",
+    "resolve_oscillator_noise",
+    "run_network_simulation",
     "OTAPilotLink",
     "Oscillator",
     "PhaseFrequencyEKF",

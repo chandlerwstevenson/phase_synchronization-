@@ -54,6 +54,7 @@ class MicroSyncResult:
     """Per-substep metrics from a two-tier reciprocal synchronization run."""
 
     true_phase: torch.Tensor
+    physical_relative_frequency: torch.Tensor
     estimated_phase: torch.Tensor
     post_correction_phase: torch.Tensor
     post_correction_frequency: torch.Tensor
@@ -325,6 +326,7 @@ def run_micro_two_way_simulation(
         name: []
         for name in (
             "true_phase",
+            "physical_relative_frequency",
             "estimated_phase",
             "post_correction_phase",
             "post_correction_frequency",
@@ -373,15 +375,20 @@ def run_micro_two_way_simulation(
                     )
                 pi_calibrated = True
 
+        # Physical (correction-free) node-B oscillator: what the hardware
+        # would do with no synchronization running at all.
+        physical_b = node_b.state[1] - slave_frequency_corrections
         if settings.sample_clock_offset_ppm is not None:
             sfo_forward = settings.sample_clock_offset_ppm
         else:
-            physical_b = node_b.state[1] - slave_frequency_corrections
             sfo_forward = float(
                 (physical_b - node_a.state[1]).item()
                 / (2.0 * math.pi * settings.carrier_frequency_hz)
                 * 1e6
             )
+        history["physical_relative_frequency"].append(
+            (node_a.state[1] - physical_b).clone()
+        )
 
         relative_state = node_a.state - node_b.state
 

@@ -52,6 +52,7 @@ class TwoWaySimulationResult:
     measured_phase: torch.Tensor
     estimated_phase: torch.Tensor
     true_frequency: torch.Tensor
+    physical_relative_frequency: torch.Tensor
     estimated_frequency: torch.Tensor
     phase_error: torch.Tensor
     frequency_error: torch.Tensor
@@ -61,6 +62,7 @@ class TwoWaySimulationResult:
     detected: torch.Tensor
     correction_active: torch.Tensor
     calibrated: torch.Tensor
+    airtime_fraction: float
     device: torch.device
 
     @property
@@ -196,6 +198,9 @@ def run_two_way_simulation(
     chain_bias = math.radians(settings.twoway_chain_asymmetry_deg)
     capture_samples = link_forward.input_length + link_forward.l_tot - 1
     remainder_samples = max(0, interval_samples - 2 * capture_samples)
+    airtime_fraction = (
+        2.0 * capture_samples / (settings.sync_interval * settings.sample_rate)
+    )
     pending_corrections: dict[int, torch.Tensor] = {}
     carried_lo_walk = torch.zeros((), dtype=REAL_DTYPE, device=device)
     flicker_previous = torch.zeros((), dtype=REAL_DTYPE, device=device)
@@ -212,6 +217,7 @@ def run_two_way_simulation(
             "measured_phase",
             "estimated_phase",
             "true_frequency",
+            "physical_relative_frequency",
             "estimated_frequency",
             "phase_error",
             "frequency_error",
@@ -257,15 +263,20 @@ def run_two_way_simulation(
                     )
                 pi_calibrated = True
 
+        # Physical (correction-free) slave oscillator: what the hardware
+        # would do with no synchronization running at all.
+        physical_slave_frequency = slave.state[1] - slave_frequency_corrections
         if settings.sample_clock_offset_ppm is not None:
             sfo_forward = settings.sample_clock_offset_ppm
         else:
-            physical_slave_frequency = slave.state[1] - slave_frequency_corrections
             sfo_forward = float(
                 (physical_slave_frequency - master.state[1]).item()
                 / (2.0 * math.pi * settings.carrier_frequency_hz)
                 * 1e6
             )
+        history["physical_relative_frequency"].append(
+            (master.state[1] - physical_slave_frequency).clone()
+        )
 
         relative_state = master.state - slave.state
         # Forward frame (master transmits); its intra-frame LO walk becomes
@@ -273,6 +284,29 @@ def run_two_way_simulation(
         # the two directions see one continuous noise process.
         capture_forward = link_forward.capture(master, slave, iteration, sfo_forward)
         master.state[0] = wrap_phase(master.state[0] + capture_forward.lo_walk_end)
+        # Half-duplex turnaround: the radios need real time to switch from
+        # receive to transmit, and both oscillators keep running across the
+        # gap - deterministic advance at their current frequencies plus the
+        # white-FM walk accumulated during it. (The channel is held static
+        # across the gap; reciprocity aging under mobility remains a known
+        # simplification.)
+        turnaround = settings.tdd_turnaround_s
+        if turnaround > 0.0:
+            walk_std = settings.phase_noise_std_rad * math.sqrt(
+                settings.sample_rate * turnaround
+            )
+            for oscillator in (master, slave):
+                wander = torch.zeros((), dtype=REAL_DTYPE, device=device)
+                if walk_std > 0.0:
+                    wander = (
+                        torch.randn(
+                            (), dtype=REAL_DTYPE, device=device, generator=generator
+                        )
+                        * walk_std
+                    )
+                oscillator.state[0] = wrap_phase(
+                    oscillator.state[0] + oscillator.state[1] * turnaround + wander
+                )
         capture_reverse = link_reverse.capture(slave, master, iteration, -sfo_forward)
         slave.state[0] = wrap_phase(slave.state[0] + capture_reverse.lo_walk_end)
 
@@ -288,10 +322,17 @@ def run_two_way_simulation(
         detected = forward.detected and reverse.detected
         # Reciprocity: the channel phase is common to both directions and
         # cancels in the half-difference, leaving the oscillator offset.
-        combined_half = wrap_phase(
-            wrap_phase(forward.phase - reverse.phase) / 2.0 + chain_bias
-        )
         combined_frequency = (forward.frequency - reverse.frequency) / 2.0
+        # The reverse frame was measured one turnaround later, so the raw
+        # half-difference contains an extra omega*turnaround/2 of drift. A
+        # real receiver knows its own turnaround and removes it with its
+        # measured CFO; the irreducible residue is the CFO-estimate error
+        # times the gap (plus the random walk across it).
+        combined_half = wrap_phase(
+            wrap_phase(forward.phase - reverse.phase) / 2.0
+            + chain_bias
+            - combined_frequency * settings.tdd_turnaround_s / 2.0
+        )
 
         ekf.predict()
         if due_correction is not None:
@@ -362,7 +403,7 @@ def run_two_way_simulation(
         history["calibrated"].append(
             torch.tensor(pi_calibrated, dtype=torch.bool, device=device)
         )
-        residual_state = master.state - slave.state
+        residual_state = master.state - slave.state 
         residual_phase = wrap_phase(residual_state[0])
         history["post_correction_phase"].append(residual_phase.clone())
         history["post_correction_frequency"].append(residual_state[1].clone())
@@ -374,6 +415,7 @@ def run_two_way_simulation(
         **{
             name: torch.stack(values).detach().cpu() for name, values in history.items()
         },
+        airtime_fraction=airtime_fraction,
         device=device,
     )
 

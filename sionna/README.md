@@ -1,5 +1,9 @@
 # SDR-like OTA synchronization with NVIDIA Sionna
 
+**Full technical reference:** `CODE_REFERENCE.md` documents every waveform,
+parameter, processing stage, algorithm, metric, measured result, and test in
+this repository.
+
 This directory ports the one-way master/slave synchronization loop in
 `../reg_python` to sampled complex IQ. The default simulation is built around
 Sionna PHY's 3GPP TR 38.901 tapped-delay-line channel, time-domain channel

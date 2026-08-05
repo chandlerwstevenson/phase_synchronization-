@@ -84,6 +84,12 @@ class SDRSimulationConfig:
     # Residual TX/RX chain phase asymmetry between the nodes after loopback
     # calibration; it does not cancel in a two-way exchange.
     twoway_chain_asymmetry_deg: float = 0.0
+    # Half-duplex (TDD) turnaround inserted between the forward and reverse
+    # frames of a two-way exchange. The oscillators keep drifting across the
+    # gap; the loop compensates the deterministic part with its own CFO
+    # estimate, so the residual penalty is the frequency-estimate error
+    # times the gap plus the phase random walk accumulated during it.
+    tdd_turnaround_s: float = 1e-3
     seed: int = 0
     device: str = "auto"
 
@@ -143,6 +149,8 @@ class SDRSimulationConfig:
             raise ValueError("frequency correction resolution must be positive")
         if self.correction_latency_intervals < 0:
             raise ValueError("correction_latency_intervals cannot be negative")
+        if self.tdd_turnaround_s < 0.0:
+            raise ValueError("tdd_turnaround_s cannot be negative")
 
     @property
     def sample_period(self) -> float:
@@ -193,6 +201,7 @@ class SDRSimulationResult:
     channel_phase: torch.Tensor
     true_frequency: torch.Tensor
     true_ota_frequency: torch.Tensor
+    physical_relative_frequency: torch.Tensor
     measured_frequency: torch.Tensor
     estimated_frequency: torch.Tensor
     ota_phase_error: torch.Tensor
@@ -207,6 +216,7 @@ class SDRSimulationResult:
     agc_gain: torch.Tensor
     adc_clip_rate: torch.Tensor
     covariance: torch.Tensor
+    airtime_fraction: float
     device: torch.device
 
     @property
@@ -890,6 +900,7 @@ def run_sdr_simulation(
             "channel_phase",
             "true_frequency",
             "true_ota_frequency",
+            "physical_relative_frequency",
             "measured_frequency",
             "estimated_frequency",
             "ota_phase_error",
@@ -909,6 +920,9 @@ def run_sdr_simulation(
 
     capture_samples = link.input_length + link.l_tot - 1
     remainder_samples = max(0, interval_samples - capture_samples)
+    airtime_fraction = capture_samples / (
+        settings.sync_interval * settings.sample_rate
+    )
     pending_corrections: dict[int, torch.Tensor] = {}
     carried_lo_walk = torch.zeros((), dtype=REAL_DTYPE, device=device)
     flicker_previous = torch.zeros((), dtype=REAL_DTYPE, device=device)
@@ -939,13 +953,16 @@ def run_sdr_simulation(
             )
             correction_has_loaded = True
 
+        # Subtracting the accumulated NCO corrections recovers the physical
+        # (correction-free) slave oscillator: what the hardware would do with
+        # no synchronization running at all.
+        physical_slave_frequency = slave.state[1] - slave_frequency_corrections
         if settings.sample_clock_offset_ppm is not None:
             sfo_ppm = settings.sample_clock_offset_ppm
         else:
             # Carrier LO and sample clock share one reference: the fractional
             # sample-clock error equals the fractional carrier error of the
             # physical (correction-free) oscillators, drift included.
-            physical_slave_frequency = slave.state[1] - slave_frequency_corrections
             sfo_ppm = float(
                 (physical_slave_frequency - master.state[1]).item()
                 / (2.0 * math.pi * settings.carrier_frequency_hz)
@@ -1011,6 +1028,9 @@ def run_sdr_simulation(
         history["channel_phase"].append(channel_phase.clone())
         history["true_frequency"].append(relative_state[1].clone())
         history["true_ota_frequency"].append(oracle.frequency.clone())
+        history["physical_relative_frequency"].append(
+            (master.state[1] - physical_slave_frequency).clone()
+        )
         history["measured_frequency"].append(measurement.frequency.clone())
         history["estimated_frequency"].append(ekf.state[1].clone())
         history["ota_phase_error"].append(
@@ -1073,5 +1093,6 @@ def run_sdr_simulation(
         **{
             name: torch.stack(values).detach().cpu() for name, values in history.items()
         },
+        airtime_fraction=airtime_fraction,
         device=device,
     )

@@ -1,1 +1,2 @@
 sionna-no-rt==2.0.1
+sionna-rt==2.0.1

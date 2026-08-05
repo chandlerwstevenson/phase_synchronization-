@@ -1,0 +1,508 @@
+================================================================
+HOW TO RUN THE PHASE SYNCHRONIZATION SIMULATIONS
+================================================================
+
+All commands are run from this folder:
+
+    cd ~/Downloads/phase_synchronization-/sionna
+
+Always use the project's Python (the plain "python" on your
+system does not have the radio libraries installed):
+
+    .venv/bin/python simulation.py [options]
+
+Or activate the environment once per terminal session, then
+just type "python":
+
+    source .venv/bin/activate
+    python simulation.py [options]
+
+Add --plot to any command to see the graphs. Every plot
+command opens the combined annotated figure PLUS one extra
+window per panel - the same plot without the explanatory
+text, clean for slides/papers (save any window with its
+disk icon). Every model's --plot draws the SAME standard
+scoreboard - identical axes, units, and thresholds - so
+figures from different methods can be compared side by side:
+
+    top panel     the phase offset on the circle (+-pi): red
+                  dots = free-running with no corrections,
+                  rolling over constantly; blue = the loop
+                  holding it. The problem and the fix at a
+                  glance.
+    middle panel  |phase residual| in mrad on a log axis,
+                  against the red 314 mrad = 18 degree line
+                  (below it = 90%+ coherent gain). The yellow
+                  box shows the COST: the share of channel
+                  time spent on sync pilots.
+    bottom panel  2-station coherent gain in %, against the
+                  90% threshold line. Red dots show the same
+                  gain with NO sync running (reconstructed
+                  from the free-running crystals): it sweeps
+                  the whole range from 100% down to 0% (waves
+                  canceling) as the phase drifts through the
+                  circle - the before/after of the algorithm.
+
+To judge a method, read accuracy AND cost together: micro
+beats two-way on residual (27 vs 83 mrad) but pays for it
+with more airtime (26% vs 19%).
+
+What "2-station coherent gain" means exactly: if both stations
+transmitted the same signal right now, the fraction of the
+ideal combined power a user would receive, cos^2(residual/2).
+Two stations perfectly in phase deliver 4x one station's power
+(2x for two transmitters, 2x again because the waves ADD);
+misalignment forfeits the second doubling. 180 degrees out =
+the waves cancel = ~0% (see the naive DFPC run). No sync at
+all averages 50% - two independent transmitters, no coherent
+bonus. The gain scales as N^2 for N stations, so sync matters
+more the bigger the array. Note: the 18-degree/90% red line is
+the distributed-array literature's large-N benchmark; for
+exactly 2 stations 18 degrees still gives ~97.6%, so treat the
+line as the community yardstick, not a cliff.
+
+What "airtime" means exactly: the stations share ONE frequency
+channel in time (half-duplex, like TDD). Airtime = the fraction
+of that channel's time occupied by sync pilots, which is time
+unavailable for payload. Example: a two-way exchange is two
+~4.8 ms pilot captures (one each direction, taking turns) per
+50 ms interval = 19.1%. Notes:
+  - It is NOT per beam or per user. Sync aligns the station's
+    single local oscillator, which then serves every beam that
+    station forms; the cost is fixed per station pair.
+  - Pilots can't just move to another frequency: carrier phase
+    is frequency-specific (a different band has a different
+    oscillator phase relationship AND different channel phase).
+  - Real systems often piggyback pilots on existing preambles
+    or reference signals, so this standalone accounting is an
+    upper bound on the true cost.
+
+Every figure also states which method it used and how that
+method works.
+
+
+----------------------------------------------------------------
+THE METHODS, ONE COMMAND EACH
+----------------------------------------------------------------
+
+1. ONE-WAY  (the default)
+   Master sends a known pilot; slave measures it, filters with
+   an EKF, and retunes itself. Locks the OBSERVABLE phase
+   (oscillator + channel combined) - the crystals themselves
+   stay offset by the absorbed channel phase.
+
+       .venv/bin/python simulation.py --plot
+
+2. TWO-WAY  (reciprocal)
+   Both stations exchange pilots over the same channel each
+   interval; half the difference of the two measured phases
+   cancels the channel, so the actual crystals align. This is
+   what you need for two transmitters to combine coherently.
+
+       .venv/bin/python simulation.py --model twoway --plot
+
+3. MICRO  (two-tier micro-pilots)
+   Two-way, plus several tiny phase-only pilots between the
+   full exchanges - corrects more often, so less drift
+   accumulates. Better accuracy, more airtime spent on pilots.
+
+       .venv/bin/python simulation.py --model micro --plot
+       # choose how many extra pilots per interval (default 4):
+       .venv/bin/python simulation.py --model micro --micro-pilots 9 --plot
+
+4. HYBRID  (one-way pilots + sparse two-way anchors)
+   Mostly cheap one-way pilots; an occasional two-way "anchor"
+   re-separates oscillator phase from channel phase. Most of
+   two-way's accuracy at a fraction of the airtime.
+
+       .venv/bin/python simulation.py --model hybrid --plot
+       # anchor cadence (default: every 5 intervals):
+       .venv/bin/python simulation.py --model hybrid --anchor-every 20 --plot
+
+4b. DHYBRID  (decentralized hybrid - no master)
+   Same estimation as hybrid, but symmetric control: each node
+   retunes HALF-way toward the other (as the consensus methods
+   do), so neither node is the reference and the pair meets at
+   its average clock. Measured: statistically identical accuracy
+   to centralized hybrid (32 vs 33 mrad) - decentralizing the
+   CONTROL costs nothing at N=2. What you gain: no single point
+   of failure. What you lose: a fixed datum (the pair's common
+   clock drifts freely), and it cannot join the --stations star
+   (no reference to build a star around; a true mesh is future
+   work).
+
+       .venv/bin/python simulation.py --model dhybrid --plot
+
+   At N > 2 stations dhybrid runs as a TRUE decentralized mesh
+   (shared oscillators, nearest-neighbor chain, degree-weighted
+   symmetric corrections, periodic 1-bit branch checks):
+
+       .venv/bin/python simulation.py --model dhybrid --stations 4 --plot
+
+   Control laws (--mesh-control, measured N=4/N=6, seed 0):
+     symmetric    all edges correct at once, degree-weighted
+                  (DFPC-style): 74% / 80% array gain - pays the
+                  "consensus tax" of simultaneous conflicting
+                  corrections on shared nodes
+     alternating  edges take turns (default): full-strength
+                  corrections, still no master - 99.9% / 95.8%
+     directed     each node retunes fully toward its elected-
+                  root parent: 99.9% / 99.8% - matches the
+                  centralized star while keeping a decentralized
+                  fault structure (re-elect the root if it dies)
+   The tax is a SCHEDULING artifact, not physics: taking turns
+   recovers most of it, an elected root all of it.
+
+5. DFPC / KF-DFPC  (published consensus algorithms,
+   Rashid & Nanzer, IEEE TWC 2023)
+   No master/slave: each node measures the other and retunes
+   itself by half its estimated offset. Implemented here over
+   the full physical layer for comparison.
+
+       .venv/bin/python simulation.py --model dfpc --plot
+       .venv/bin/python simulation.py --model kfdfpc --plot
+
+6. COMPARE  (all of the above, head to head)
+   Runs every open-loop method under identical physical
+   conditions and prints a table; --plot overlays all the
+   residual trajectories on one log-scale axis.
+   Slow: it runs six full simulations.
+
+       .venv/bin/python simulation.py --model compare --plot
+
+7. IDEAL  (toy baseline)
+   The original tone-plus-noise model: no multipath channel,
+   no hardware impairments. Kept only for comparison.
+
+       .venv/bin/python simulation.py --model ideal --plot
+
+
+----------------------------------------------------------------
+OTHER PLOTS
+----------------------------------------------------------------
+
+    --sweep-interval   answers "why 50 ms between pilots?":
+                  reruns the chosen model at several cadences
+                  (default 10,20,50,100,200,500 ms) and plots
+                  accuracy vs cost against the interval. Longer
+                  interval = more drift accumulates between
+                  corrections (worse residual) but fewer pilots
+                  (cheaper airtime). 50 ms is one point on that
+                  trade curve, not a magic number. Works with
+                  any model except compare/ideal; add --plot
+                  for the figure. Example (two-way, ~3 min):
+
+        .venv/bin/python simulation.py --model twoway --sweep-interval --plot
+        # or custom values in ms:
+        .venv/bin/python simulation.py --sweep-interval 25,50,75 --plot
+
+    --plot-story  guided walkthrough for the one-way model:
+                  the rollover problem, the residual, and the
+                  estimator's eyesight. The best figure for
+                  UNDERSTANDING what sync is doing; use --plot
+                  for COMPARING methods.
+
+        .venv/bin/python simulation.py --plot-story
+
+    --plot-all    six diagnostic panels for the one-way model
+                  (detection confidence, CFO acquisition,
+                  timing, phase decomposition)
+
+        .venv/bin/python simulation.py --plot-all
+
+    --plot-iq     one capture at the raw sample level: the
+                  transmitted waveform, what actually arrived
+                  through the channel, the constellation, and
+                  the detection/timing correlations. The best
+                  plot for understanding what a "pilot" is.
+
+        .venv/bin/python simulation.py --plot-iq
+
+
+----------------------------------------------------------------
+KNOBS WORTH TURNING (work with any model)
+----------------------------------------------------------------
+
+    --oscillator ocxo       use a real oscillator class instead of
+                            the hand-tuned legacy noise ("custom").
+                            Profiles are anchored to datasheets:
+                              ocxo  = macro base station Stratum 3E
+                                      OCXO (Rakon ROM1490E class),
+                                      GPS-disciplined to 3GPP's
+                                      +-50 ppb -> initial CFO ~46 Hz
+                              tcxo  = small-cell ultra-stable TCXO,
+                                      +-100 ppb -> ~92 Hz
+                              sdr   = bench SDR TCXO, no GPSDO
+                                      (USRP B2xx class, +-2 ppm ->
+                                      ~1830 Hz). At 50 ms cadence
+                                      this class CANNOT hold carrier
+                                      phase (residual ~2 rad!) -
+                                      which is why real SDR demos
+                                      add a GPSDO or sync faster.
+                            Measured (twoway, 25 intervals):
+                            ocxo 45 mrad / custom 83 / sdr 1846.
+
+    --turnaround-ms 5       half-duplex (TDD) turnaround between the
+                            forward and reverse frames of a two-way
+                            exchange (default 1 ms; 0 = the old
+                            instant-reciprocity idealization). The
+                            crystals keep drifting across the gap;
+                            the loop compensates what its own CFO
+                            estimate predicts, and the leftover -
+                            CFO error x gap + drift during the gap -
+                            is a real, physical penalty. (Currently
+                            modeled in the twoway loop; micro/hybrid
+                            anchors and dfpc still assume an instant
+                            exchange.)
+
+    --seeds 10              Monte Carlo: rerun the model at N
+                            consecutive seeds and report mean +- std
+                            of residual/gain/detection. Turns any
+                            single-realization number into a
+                            defensible one. Works with --model
+                            compare as well.
+
+    --iterations 500        longer run (default 100; each
+                            interval is 50 ms of simulated time)
+    --snr-db 5              noisier link (default 20)
+    --cfo-hz 10000          bigger initial frequency offset
+                            (default 1500)
+    --correction-latency 0  corrections apply instantly
+                            (default 1 interval late). Try this
+                            to see the residual shrink to the
+                            estimator's tracking accuracy.
+    --correction-latency 5  slower control loop - residual grows
+    --no-rf-impairments     switch off hardware flaws (phase
+                            noise, IQ imbalance, clock offset,
+                            fading) to isolate their effect
+    --speed-mps 0.5         make the channel move (Doppler);
+                            interesting with --model hybrid
+    --seed 1                different random draw; same seed
+                            always gives the identical run
+
+Suggested experiment sequence for building intuition:
+
+    # 1. the problem and the default solution (walkthrough)
+    .venv/bin/python simulation.py --plot-story
+    # 2. what a pilot looks like on the air
+    .venv/bin/python simulation.py --plot-iq
+    # 3. prove the residual is latency-limited
+    .venv/bin/python simulation.py --plot-story --correction-latency 0
+    # 4. align the actual crystals, not just the observable
+    #    (scoreboards share axes - compare them side by side)
+    .venv/bin/python simulation.py --plot
+    .venv/bin/python simulation.py --model twoway --plot
+    .venv/bin/python simulation.py --model micro --plot
+    # 5. everything head to head on one figure
+    .venv/bin/python simulation.py --model compare --plot
+
+
+----------------------------------------------------------------
+SCALING TO N BASE STATIONS
+----------------------------------------------------------------
+
+    --stations N       run the chosen model as an N-station
+                       network. Station 0 is the reference;
+                       every other station syncs to it with the
+                       chosen pairwise scheme (sdr, twoway,
+                       micro, or hybrid), time-multiplexed on
+                       ONE shared channel. Stations are placed
+                       uniformly at random in a disc
+                       (--area-radius-m, default 500 m) and
+                       each link's SNR follows log-distance
+                       path loss (--path-loss-exponent, default
+                       2.7; --snr-db is defined at
+                       --ref-distance-m, default 500 m).
+                       Reported: per-station distance/SNR/
+                       residual/detection, the N-station array
+                       coherent gain (fraction of the ideal N^2
+                       power if all stations transmitted
+                       together), and total pilot airtime.
+
+        .venv/bin/python simulation.py --model twoway --stations 6 --plot
+        # plot: deployment map, per-station residuals, array gain
+
+    --sweep-stations   the scalability curve: rerun at several
+                       array sizes (bare flag: 2,4,8,12) and
+                       plot coherence + worst residual + total
+                       airtime vs N. The two scaling walls:
+                       (1) per-station errors compound, so the
+                       array gain falls as N grows;
+                       (2) pilots share one channel, so airtime
+                       grows LINEARLY with N - two-way at 50 ms
+                       stops fitting around N=6 (19.1% x (N-1)).
+                       Micro hits the wall sooner (more pilots);
+                       hybrid stretches it (cheaper pilots);
+                       stretching the sync interval trades wall
+                       position against per-station accuracy
+                       (combine with --sweep-interval insight).
+
+        .venv/bin/python simulation.py --model twoway --sweep-stations --plot
+        .venv/bin/python simulation.py --model hybrid --sweep-stations 2,6,12,20 --plot
+
+    ONE COMMAND FOR EVERYTHING: run every method on the SAME
+    random deployment (identical station positions, since the
+    seed fixes them) with full figures - deployment map,
+    per-station residuals, array gain - for each method in
+    turn (close a method's figures to advance to the next):
+
+        .venv/bin/python run_everything.py
+        .venv/bin/python run_everything.py --stations 10 --models twoway hybrid
+
+    THE FULL 2-D ANSWER ("which method scales best?"): sweep
+    cadence AND station count together with the standalone
+    driver (15-30 min for the default grid):
+
+        .venv/bin/python scalability_sweep.py
+
+    For each method and cadence it finds the largest N that
+    fits the channel and measures the array gain there.
+    Measured verdict (seed 0): hybrid dominates the whole grid
+    - e.g. at 200 ms it holds 20 stations at 99.7% gain using
+    71% of the channel (its wall is 27+), while two-way at the
+    same cadence is down to 96.1% with its worst station at
+    256 mrad, and micro fits only 16 stations.
+
+    Distant stations are noisier by physics: past some radius
+    their detection rate collapses and they drop out - raise
+    --snr-db, shrink --area-radius-m, or lower the exponent to
+    model a denser/cleaner deployment.
+
+    Honest limits (documented in ota_sync/network.py): pairwise
+    links are simulated independently, so the reference's own
+    oscillator noise is drawn per link instead of being common;
+    the reported array gain is slightly conservative. TDMA
+    separation is assumed perfect. The consensus models
+    (dfpc/kfdfpc) stay 2-node at the physical layer.
+
+----------------------------------------------------------------
+DRONE-DETECTION VIABILITY (the application layer)
+----------------------------------------------------------------
+
+    Why sync matters at all: N coherent stations put N^2 x the
+    power on a passive target (transmit focusing) and add
+    another N on receive, so detection SNR = N^3 * G^2 x one
+    station - where G is the array coherent gain every sync
+    result in this repo measures, and it enters SQUARED because
+    sync errors hurt both legs.
+
+    THE REAL TEST (waveform level - counted detections, no
+    detection formulas in the loop):
+
+        .venv/bin/python waveform_detection_study.py
+
+    A drone flies a straight path across the deployment. ZC
+    pilots synchronize the stations (that is what ZC is for);
+    the SENSING waveform is a 5G-style OFDM burst (random QPSK
+    subcarriers + CP), transmitted by every station pre-steered
+    at the hypothesized target cell. Each Monte-Carlo trial
+    synthesizes the actual echo sample streams - geometric
+    spreading, a Swerling-1 RCS draw, the measured sync
+    residuals from the actual sync run, real noise - then
+    matched-filters, coherently combines, and compares to an
+    EMPIRICAL threshold calibrated on target-absent trials (the
+    achieved Pfa is re-measured and printed). Pd is the counted
+    fraction of detections. The scene figure shows station
+    locations, the drone path colored by measured Pd, and the
+    beam steering as the array refocuses on the moving target.
+
+    PROPAGATION IS RAY-TRACED (Sionna RT, now installed - see
+    requirements.txt): by default the station->target legs are
+    computed by the RT path solver in a 3-D scene with a
+    dielectric ground plane (BS masts at --bs-height-m 15,
+    drone at --drone-alt-m 60), so the two-ray ground-bounce
+    lobing that dominates low-altitude UHF detection is in the
+    measured Pd. The drone's RCS stays analytic at the RT probe
+    point because shooting-ray solvers physically cannot sample
+    bounces off a 0.3 m object at hundreds of meters (verified:
+    0 paths found) - this RT-legs + analytic-RCS coupling is
+    the standard ISAC approach. Validation: --propagation
+    rt-freespace reproduces the analytic model waypoint-for-
+    waypoint, and the RT leg amplitude/phase/delay match
+    free-space physics to float32 precision.
+
+    Knobs: --stations, --trials, --rcs-dbsm, --tx-power-w,
+    --pulse-length, --waveform ofdm|zc, --threshold-pfa,
+    --path-offset-m, --waypoints, --seed,
+    --propagation rt-ground|rt-freespace|analytic,
+    --bs-height-m, --drone-alt-m.
+    Scope: cued single-gate detection, no clutter or direct-path
+    interference, PA effects not applied to the detection burst.
+    Next fidelity: buildings/terrain in the RT scene, per-path
+    Doppler, drone mesh scattering studies.
+
+    THE FIELD-REALISM LAYER (clutter-limited detection):
+
+        .venv/bin/python realistic_detection_study.py
+
+    adds everything that bites in the field: gamma-model ground
+    clutter with internal motion, injected into the raw streams
+    (it leaks across range gates through the waveform's own
+    sidelobes; peak clutter-to-noise ~70 dB, so the problem is
+    clutter-limited exactly as real UHF drone radar); direct-
+    path self-interference at true delays/amplitudes with actual
+    least-squares cancellation (measured: ~39 dB above noise in,
+    ~2 dB out); an aspect-dependent drone body RCS plus rotor-
+    blade micro-Doppler instead of a Swerling scalar; a full
+    pulse-train CPI with range-Doppler processing; and CA-CFAR
+    search with the clutter ridge notched, calibrated
+    empirically on target-absent trials that CONTAIN clutter
+    and interference. --buildings N puts random concrete boxes
+    in the RT scene (blockage/reflection on the target legs).
+    Detection now survives by Doppler separation, not raw link
+    budget - the physically correct mechanism.
+    Remaining gaps, stated: no discrete clutter objects, no RF
+    nonlinearity on the sensing chain, single CPI (no tracker),
+    and everything is simulation - no hardware validation.
+
+    THE QUICK ANALYTIC LAYER (cross-validated by the waveform
+    test: its predictions match the counted results):
+
+        .venv/bin/python detection_study.py
+
+    converts each method's measured sync gain G into detection
+    range via SNR = N^3*G^2 (Swerling-1 closed forms) - useful
+    for fast parameter sweeps; trust the waveform study for
+    claims.
+
+----------------------------------------------------------------
+ARE THE PILOTS REALISTIC? (not tones)
+----------------------------------------------------------------
+
+The pilots are NOT single-frequency tones (only the toy "ideal"
+model uses a tone). They are Zadoff-Chu sequences - the same
+waveform family LTE/5G use for random access and sync signals -
+spreading 99% of their power across ~800 kHz of the 1 MHz band,
+with a perfectly constant envelope (PA-friendly). The wideband
+structure is essential, not decoration: it provides the sharp
+matched-filter peak for sample-level timing, survives the
+frequency-selective multipath channel, and the repeated blocks
+measure the frequency offset. A tone could do none of these.
+The one legitimate "single frequency" is the 915 MHz carrier
+itself: what gets synchronized is the carrier phase, exactly as
+in real radios (the pilot's 1 MHz width is 0.1% of the carrier,
+so "the carrier phase" is well-defined). Run --plot-iq to see
+the actual waveform, its passage through the channel, and the
+receiver's correlations. Remaining simplifications are listed
+in CODE_REFERENCE.md section 14 (baseband-equivalent signals,
+statistical TDL channel, no hardware validation).
+
+----------------------------------------------------------------
+TESTS
+----------------------------------------------------------------
+
+    .venv/bin/python -m pytest        # 18 tests, ~6 seconds
+
+
+----------------------------------------------------------------
+WHERE TO READ MORE
+----------------------------------------------------------------
+
+    README.md               quick start
+    METHOD_CALCULATIONS.md  the math: every formula each sync
+                            method computes, step by step
+    CODE_REFERENCE.md       every waveform, algorithm, metric,
+                            and measured number, in detail
+    teaching_document.pdf   the concepts from the ground up
+    simulation_design.pdf   architecture summary
+================================================================

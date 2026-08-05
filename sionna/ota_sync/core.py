@@ -197,6 +197,7 @@ class Oscillator:
         if self.process_covariance.shape != (2, 2):
             raise ValueError("process_covariance must have shape [2, 2]")
         self._noise_root = _covariance_root(self.process_covariance)
+        
         self._generator = generator
 
     @property

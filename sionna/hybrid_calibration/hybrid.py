@@ -177,6 +177,7 @@ class HybridSyncResult:
     """Per-substep metrics from a hybrid calibration run."""
 
     true_phase: torch.Tensor
+    physical_relative_frequency: torch.Tensor
     estimated_phase: torch.Tensor
     estimated_channel_phase: torch.Tensor
     post_correction_phase: torch.Tensor
@@ -225,6 +226,7 @@ def run_hybrid_simulation(
     micro_sequence_length: int = 255,
     micro_cp_length: int = 32,
     channel_drift_std_rad: float = 0.01,
+    decentralized: bool = False,
 ) -> HybridSyncResult:
     """Run the hybrid one-way/two-way calibration loop.
 
@@ -234,6 +236,16 @@ def run_hybrid_simulation(
     reciprocal two-way exchange that separates oscillator and channel
     phase. ``channel_drift_std_rad`` is the assumed channel-phase random
     walk per interval (the estimator's knob for channel coherence time).
+
+    ``decentralized=True`` removes the master/slave asymmetry in the
+    CONTROL: instead of node B retuning by the full correction toward
+    node A's clock, each node retunes half-way toward the other
+    (DFPC-style symmetric update), so neither node is the datum and the
+    pair converges to the average of the two clocks. The estimation is
+    unchanged; the applied correction reaches both nodes over the same
+    side channel the consensus literature already assumes. The relative
+    dynamics are identical by construction — what changes is fault
+    structure (no single reference) and the absolute datum (floating).
     """
 
     if micro_pilots_per_interval < 0:
@@ -366,7 +378,10 @@ def run_hybrid_simulation(
     pending: dict[int, torch.Tensor] = {}
     carried_lo_walk = torch.zeros((), dtype=REAL_DTYPE, device=device)
     flicker_previous = torch.zeros((), dtype=REAL_DTYPE, device=device)
-    slave_frequency_corrections = torch.zeros((), dtype=REAL_DTYPE, device=device)
+    # Accumulated NCO frequency corrections per node (node A receives
+    # them only in decentralized mode).
+    corrections_a = torch.zeros((), dtype=REAL_DTYPE, device=device)
+    corrections_b = torch.zeros((), dtype=REAL_DTYPE, device=device)
     correction_has_loaded = False
     acquired = False
     settled_corrections = 0
@@ -377,6 +392,7 @@ def run_hybrid_simulation(
         name: []
         for name in (
             "true_phase",
+            "physical_relative_frequency",
             "estimated_phase",
             "estimated_channel_phase",
             "post_correction_phase",
@@ -404,8 +420,17 @@ def run_hybrid_simulation(
 
         due = pending.pop(substep, None)
         if due is not None:
-            node_b.apply_correction(due)
-            slave_frequency_corrections = slave_frequency_corrections + due[1]
+            if decentralized:
+                # Symmetric update: each node moves half-way toward the
+                # other. The relative correction (a - b changes by -due)
+                # is identical to the centralized case by construction.
+                node_a.apply_correction(-due / 2.0)
+                node_b.apply_correction(due / 2.0)
+                corrections_a = corrections_a - due[1] / 2.0
+                corrections_b = corrections_b + due[1] / 2.0
+            else:
+                node_b.apply_correction(due)
+                corrections_b = corrections_b + due[1]
             correction_has_loaded = True
 
         # One-time pi-ambiguity calibration (see run_two_way_simulation).
@@ -415,23 +440,34 @@ def run_hybrid_simulation(
             settled_corrections += 1
             if settled_corrections >= 3:
                 if torch.cos(node_a.state[0] - node_b.state[0]) < 0.0:
-                    node_b.apply_correction(
-                        torch.tensor(
-                            [math.pi, 0.0], dtype=REAL_DTYPE, device=device
-                        )
+                    flip = torch.tensor(
+                        [math.pi, 0.0], dtype=REAL_DTYPE, device=device
                     )
+                    if decentralized:
+                        # Split the pi flip too: -pi/2 and +pi/2 shift the
+                        # relative phase by the same pi (mod 2*pi).
+                        node_a.apply_correction(-flip / 2.0)
+                        node_b.apply_correction(flip / 2.0)
+                    else:
+                        node_b.apply_correction(flip)
                     ekf.state[2] = wrap_phase(ekf.state[2] - math.pi)
                 pi_calibrated = True
 
+        # Physical (correction-free) oscillators: what the hardware would
+        # do with no synchronization running at all.
+        physical_a = node_a.state[1] - corrections_a
+        physical_b = node_b.state[1] - corrections_b
         if settings.sample_clock_offset_ppm is not None:
             sfo_forward = settings.sample_clock_offset_ppm
         else:
-            physical_b = node_b.state[1] - slave_frequency_corrections
             sfo_forward = float(
-                (physical_b - node_a.state[1]).item()
+                (physical_b - physical_a).item()
                 / (2.0 * math.pi * settings.carrier_frequency_hz)
                 * 1e6
             )
+        history["physical_relative_frequency"].append(
+            (physical_a - physical_b).clone()
+        )
 
         relative_state = node_a.state - node_b.state
 
