@@ -400,6 +400,45 @@ SMART ALLOCATION OF PHASE SYNC (scheduled pilots)
     branch of the two-way half-difference, so the 1-bit
     combining check must be periodic, not one-shot.
 
+    SCHEDULING EXTENSIONS (all opt-in; every default reproduces the
+    original runs bit-for-bit). run_scheduled_star gained baseline
+    policies (roundrobin, whittle = restless-bandit index, oracle =
+    genie upper bound), per-station oscillator classes, mid-run budget
+    re-targeting, and a second cheap service modality (phase-only
+    micro-pilots priced at true sample cost). Four studies exercise
+    them:
+
+        .venv/bin/python contention_study.py
+                  what happens when sync demand exceeds channel
+                  capacity: caps the channel below the fixed-cadence
+                  demand and compares all five policies with counted
+                  edge detection. Uniform starves stations by
+                  construction; informed scheduling decides which
+                  stations stay coherent. --multi-fidelity lets cheap
+                  micro-pilots pack the capped channel tighter.
+
+        .venv/bin/python airtime_wall_study.py
+                  the wall, measured per policy: sweeps N at the
+                  physical channel capacity and reports gain, airtime,
+                  and N_max holding 90% - the "wall moves right"
+                  claim as a curve instead of a sentence.
+
+        .venv/bin/python sensing_loop_study.py
+                  closed sensing->sync loop: a drone crosses the
+                  deployment and the budgets RE-TARGET each track
+                  segment from the ray-traced legs toward the current
+                  target hypothesis (budget_updates hook). Counted Pd
+                  at each waypoint from that segment's own residuals.
+
+        .venv/bin/python heterogeneous_fleet_study.py
+                  mixed OCXO/TCXO fleets (per-station oscillator
+                  classes): the scheduler pours airtime into the noisy
+                  crystals and lets good ones coast - the dividend
+                  grows with fleet spread. Part 2 sweeps channel
+                  motion (--speeds) to find where uncertainty-driven
+                  coasting breaks (the Doppler analogue of the two
+                  documented failure modes).
+
 ----------------------------------------------------------------
 DRONE-DETECTION VIABILITY (the application layer)
 ----------------------------------------------------------------

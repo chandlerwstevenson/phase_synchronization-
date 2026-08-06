@@ -65,6 +65,55 @@ oscillator class, link SNR, and latency.
 - Motivation citation: Mudumbai et al., "On the Feasibility of
   Distributed Beamforming," TWC 2007 (established the overhead wall).
 
+**STATUS UPDATE (2026-08-05, evening): the missing experiments are
+built and measured** (`ota_sync/scheduled.py` extensions +
+`contention_study.py`, `airtime_wall_study.py`, `sensing_loop_study.py`,
+`heterogeneous_fleet_study.py`; all opt-in, defaults regression-locked
+bit-for-bit, 12 new tests):
+
+- **Contended channel (the operating point the paper needs):** N=10,
+  channel capped at 2 of 9 demanded exchanges/interval: uniform 10.5%
+  gain (starved stations free-run), round-robin 84.8%, scheduled
+  94.0%, genie oracle 97.8% — the threshold rule captures most of what
+  perfect information could buy.
+- **Airtime wall, measured per policy:** uniform's wall at exactly
+  N=6 (27% gain by N=10); scheduled 98.4% at N=12 on 77% airtime.
+  The "wall moves right" claim is now a curve, not a sentence.
+- **Multi-fidelity servicing:** posterior-driven choice between full
+  two-way frames and phase-only micro-pilots (priced at true sample
+  cost): airtime 57.4% -> 10.4% at unchanged gain on a uniform star.
+- **Heterogeneous fleets:** OCXO/TCXO mix — scheduler service rates
+  12% vs 55% per class, 97.5% gain at 36% airtime. The dividend grows
+  with fleet spread, as the coasting-time formula predicts.
+- **Motion (candidate NEW TERM for idea #1):** scheduled coasting
+  degrades with channel Doppler (145 -> 227 mrad at 3 m/s) while
+  uniform holds — the filter's coast-time rule is missing a
+  channel-decorrelation term. Same discovery shape as the latency
+  term: derive it, show the corrected rule closes the gap.
+- **Negative result worth a caution paragraph:** a myopic
+  Whittle-style index UNDERPERFORMS the plain threshold rule under
+  severe contention (64% vs 94% gain at capacity 2) — it chases
+  already-blown links instead of protecting salvageable ones.
+- **Sensing-in-the-loop budgets** (`budget_updates` re-targeted per
+  track segment from the RT legs toward the current target
+  hypothesis): 56% airtime returned at matching per-waypoint counted
+  Pd — but it only TIES static-edge budgets uncontended; the
+  differentiating experiment is tracking budgets + capped channel
+  (both knobs now compose; not yet run).
+
+**ENLARGED KILL RISK (must clear before writing):** the earlier
+prior-art pass covered event-triggered Kalman filtering, but NOT the
+Age-of-Information scheduling literature (Whittle-index freshness
+scheduling, Kadota et al.) or remote-state-estimation sensor
+scheduling (Shi/Sinopoli line) — both do "service the estimator whose
+uncertainty grows fastest over a constrained channel" in the abstract.
+The claim must be framed as the INTERSECTION: the scheduled resource
+is carrier-phase coherence, the update is a physical two-way pilot
+with real airtime cost, budgets are set by a sensing task's detection
+utility, and validation is counted detection at waveform level. A
+dedicated AoI/remote-estimation search is now the first
+pre-submission task for this paper.
+
 ## 3. WEAKER BUT UNCLAIMED — anchor-cadence analysis (hybrid scheme)
 
 **Idea:** the hybrid model's 3-state EKF makes the oscillator-vs-channel
@@ -182,6 +231,47 @@ in a paper:** `ota_sync/network.py` charges hybrid's one-way pilots
 per-link because links are simulated independently; physically they
 broadcast, so the star's true airtime is lower than reported (hybrid's
 27-station wall is an underestimate).
+
+## 7. PROPOSED — posterior-gated membership (who is IN the array)
+
+**Idea (2026-08-05):** subset participation driven by the sync
+posterior. In a coherent array a station whose phase residual drifts
+past ~90 degrees doesn't just stop helping — it SUBTRACTS from the
+beam (measured here: anti-phase DFPC combines to ~0.7%). The Kalman
+posterior predicts exactly when a coasting station crosses from asset
+to liability, so schedule pilots AND membership from the same state:
+a station that can't get airtime this interval is benched from the
+coherent sum until re-synced, and the scheduler prices the bench at
+N^2-vs-(N-1)^2 of array gain. Soft version: weight each station's
+contribution by its expected phasor E[e^{j theta}] = e^{-sigma^2/2}
+straight from the filter covariance — a scheduling-integrated form of
+robust beamforming under phase error.
+
+- **What is NOT novel (do not claim):** subset/node selection per se —
+  sensor selection (Joshi & Boyd convex relaxation and descendants),
+  antenna selection in MIMO, node selection + power allocation in
+  distributed MIMO radar (Godrich/Petropulu/Poor), AP selection in
+  cell-free massive MIMO. All select by SNR/geometry/power and assume
+  a selected node WORKS; none gate on a time-varying synchronization
+  posterior, and none model a member that actively harms the array.
+- **The open-looking intersection:** joint pilot-airtime + membership
+  scheduling from the sync posterior in an OTA carrier-phase array,
+  where membership is perishable (coherence decays between pilots)
+  and validation is counted detection. Adjacent literatures to clear:
+  sensor selection, robust/Bayesian beamforming under phase errors
+  (the e^{-sigma^2/2} weighting exists analytically there), and the
+  AoI kill-risk noted in idea #2.
+- **Cheap to test with what now exists:** residual matrices are
+  already per-station/per-interval; gating is bookkeeping on the
+  coherent sum. Experiment: all-in vs posterior-gated vs
+  oracle-gated membership under the contended channel
+  (`contention_study.py` regime, where stations genuinely go stale
+  at radian-level residuals). Prediction: gating recovers a large
+  fraction of uniform-under-contention's lost gain and finally
+  separates the policies in counted Pd, not just array gain.
+- Natural home: the section that completes the scheduling paper's
+  triangle — budgets say what each station NEEDS, the scheduler says
+  who gets AIRTIME, gating says what to do with the losers.
 
 ## NOT claims — validation machinery (never present as novelty)
 

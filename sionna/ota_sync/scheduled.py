@@ -31,12 +31,51 @@ time is the dividend the sensing side would collect.
 This star shares the reference oscillator across links (an upgrade on
 the independent pairwise network simulation: the reference's noise is
 common-mode here, as in reality).
+
+Extensions (all opt-in; every default reproduces the original run
+bit-for-bit, including the random draw order):
+
+  policy="roundrobin"   uninformed baseline: links serviced in fixed
+                        rotation at the same capacity (acquisition is
+                        still forced first, otherwise the baseline
+                        never locks and the comparison is vacuous).
+  policy="oracle"       genie upper bound: ranks links by their TRUE
+                        instantaneous residual over budget - state no
+                        online policy can observe without spending the
+                        airtime. Same trigger semantics as "scheduled".
+  policy="whittle"      myopic Whittle-style index: ranks links by the
+                        one-interval GROWTH in predicted budget-
+                        violation probability 2Q(budget/sigma) if the
+                        link coasts; services those whose next-interval
+                        violation risk clears the trigger. The restless-
+                        bandit view of pilot scheduling: you only
+                        observe a link's phase by paying its airtime.
+  oscillator_profiles   per-station oscillator classes (one name per
+                        station, index 0 = the reference), e.g.
+                        ["ocxo", "ocxo", "sdr", ...]: heterogeneous
+                        fleets where coast times differ per station.
+                        Slave initial CFO follows each profile's
+                        datasheet accuracy. The link's radio chain uses
+                        the slave-side profile for capture-time LO
+                        noise; heterogeneity enters the oscillator
+                        processes and each link's EKF process noise.
+  budget_updates        {iteration: [budgets...]} re-targets budgets
+                        mid-run - the hook for sensing-in-the-loop
+                        scheduling (budgets follow the target
+                        hypothesis as it moves).
+  multi_fidelity=True   two service modalities: a full two-way frame,
+                        or - once a link is settled and its frequency
+                        posterior is tight - a cheap reciprocal
+                        phase-only micro-pilot (the microsync
+                        machinery), priced at its true sample cost.
+                        Capacity is then accounted in full-exchange
+                        units, so cheap pilots pack tighter.
 """
 
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 import numpy as np
 import torch
@@ -50,7 +89,17 @@ from .core import (
     resolve_device,
     wrap_phase,
 )
+from .microsync import (
+    _estimate_micro_phase,
+    _make_micro_preamble,
+    _micro_measurement_covariance,
+)
 from .network import MAX_LINK_SNR_DB, place_stations
+from .oscillators import (
+    LEGACY_PROFILE_NAME,
+    OSCILLATOR_PROFILES,
+    resolve_oscillator_noise,
+)
 from .sdr import (
     SDRRadioLink,
     SDRSimulationConfig,
@@ -60,6 +109,22 @@ from .sdr import (
     _quantize_correction,
     make_sync_preamble,
 )
+
+SCHEDULER_POLICIES = (
+    "scheduled",
+    "uniform",
+    "roundrobin",
+    "oracle",
+    "whittle",
+)
+
+
+def _violation_probability(sigma: float, budget: float) -> float:
+    """P(|phase error| > budget) for a zero-mean Gaussian posterior."""
+
+    if sigma <= 0.0:
+        return 0.0
+    return math.erfc(budget / (sigma * math.sqrt(2.0)))
 
 
 @dataclass(frozen=True)
@@ -75,6 +140,8 @@ class ScheduledSyncResult:
     airtime_used_fraction: float
     airtime_uniform_fraction: float
     device: torch.device
+    # Extensions (defaults keep older constructions valid):
+    serviced_micro: torch.Tensor | None = None  # bool, multi-fidelity only
 
     @property
     def num_stations(self) -> int:
@@ -106,11 +173,18 @@ class ScheduledSyncResult:
             torch.sum(self.serviced.to(torch.float64), dim=0)
         ).item()
 
-    def residual_matrix(self) -> torch.Tensor:
+    def residual_matrix(
+        self, interval_slice: slice | None = None
+    ) -> torch.Tensor:
         """(stations, steady-samples), row 0 the reference — for the
-        detection pipeline."""
+        detection pipeline. ``interval_slice`` restricts to a window of
+        intervals (e.g. while the target was near one waypoint)."""
 
         steady = self.steady
+        if interval_slice is not None:
+            window = torch.zeros_like(steady)
+            window[interval_slice] = True
+            steady = steady & window
         rows = [
             torch.zeros(int(steady.sum().item()), dtype=torch.float64)
         ]
@@ -129,11 +203,39 @@ def run_scheduled_star(
     radius_m: float = 500.0,
     path_loss_exponent: float = 2.7,
     reference_distance_m: float = 500.0,
+    oscillator_profiles: list[str] | None = None,
+    budget_updates: dict[int, list[float]] | None = None,
+    multi_fidelity: bool = False,
+    micro_sequence_length: int = 255,
+    micro_cp_length: int = 32,
 ) -> ScheduledSyncResult:
-    """Uncertainty-driven two-way sync scheduling on a star network."""
+    """Uncertainty-driven two-way sync scheduling on a star network.
 
-    if policy not in ("scheduled", "uniform"):
-        raise ValueError("policy must be 'scheduled' or 'uniform'")
+    See the module docstring for the extension knobs; defaults
+    reproduce the original scheduled/uniform behavior exactly.
+    """
+
+    if policy not in SCHEDULER_POLICIES:
+        raise ValueError(f"policy must be one of {SCHEDULER_POLICIES}")
+    if oscillator_profiles is not None:
+        if len(oscillator_profiles) != num_stations:
+            raise ValueError("need one oscillator profile per station")
+        for profile_name in oscillator_profiles:
+            if (
+                profile_name != LEGACY_PROFILE_NAME
+                and profile_name not in OSCILLATOR_PROFILES
+            ):
+                raise ValueError(
+                    f"unknown oscillator profile '{profile_name}'; choose "
+                    f"from {(LEGACY_PROFILE_NAME, *OSCILLATOR_PROFILES)}"
+                )
+    if budget_updates is not None:
+        for update_iteration, update in budget_updates.items():
+            if len(update) != num_stations - 1:
+                raise ValueError(
+                    "budget_updates entries need one budget per "
+                    f"non-reference station (iteration {update_iteration})"
+                )
     device = resolve_device(settings.device)
     torch.manual_seed(settings.seed)
     sionna_config.seed = settings.seed
@@ -146,10 +248,34 @@ def run_scheduled_star(
     if len(budgets_rad) != num_stations - 1:
         raise ValueError("need one budget per non-reference station")
 
-    frequency_process_std = 2.0 * math.pi * settings.frequency_process_std_hz
+    # Per-station noise fields: identical to `settings` unless a
+    # profile list is given (index 0 = the reference station).
+    def _station_noise(station: int) -> tuple[dict[str, float], float | None]:
+        if oscillator_profiles is None:
+            return {}, None
+        return resolve_oscillator_noise(
+            oscillator_profiles[station],
+            settings.carrier_frequency_hz,
+            settings.sample_rate,
+            settings.sync_interval,
+        )
+
+    reference_noise, _ = _station_noise(0)
+    reference_phase_walk_std = reference_noise.get(
+        "phase_noise_std_rad", settings.phase_noise_std_rad
+    )
+    frequency_process_std = 2.0 * math.pi * reference_noise.get(
+        "frequency_process_std_hz", settings.frequency_process_std_hz
+    )
     oscillator_covariance = torch.diag(
         torch.tensor(
-            [settings.phase_process_std_rad**2, frequency_process_std**2],
+            [
+                reference_noise.get(
+                    "phase_process_std_rad", settings.phase_process_std_rad
+                )
+                ** 2,
+                frequency_process_std**2,
+            ],
             dtype=REAL_DTYPE,
             device=device,
         )
@@ -163,7 +289,9 @@ def run_scheduled_star(
         generator,
     )
     flicker = _FlickerFrequencyNoise(
-        settings.flicker_frequency_std_hz,
+        reference_noise.get(
+            "flicker_frequency_std_hz", settings.flicker_frequency_std_hz
+        ),
         settings.sync_interval,
         settings.num_iterations * settings.sync_interval,
         device,
@@ -173,7 +301,11 @@ def run_scheduled_star(
 
     preamble = make_sync_preamble(settings, device)
     interval_samples = int(round(settings.sync_interval * settings.sample_rate))
-    white_fm_phase_variance = settings.phase_noise_std_rad**2 * interval_samples
+    micro_preamble = (
+        _make_micro_preamble(micro_sequence_length, micro_cp_length, device)
+        if multi_fidelity
+        else None
+    )
 
     links = []
     for station in range(1, num_stations):
@@ -187,28 +319,52 @@ def run_scheduled_star(
             * math.log10(distance / reference_distance_m),
             MAX_LINK_SNR_DB,
         )
+        station_noise, station_cfo = _station_noise(station)
+        overrides: dict[str, float] = {
+            "snr_db": snr_db,
+            "slave_initial_phase": settings.slave_initial_phase
+            * station
+            / max(num_stations - 1, 1),
+            "slave_initial_frequency_hz": (
+                settings.slave_initial_frequency_hz
+                * station
+                / max(num_stations - 1, 1)
+            ),
+        }
+        overrides.update(station_noise)
+        if station_cfo is not None:
+            overrides["slave_initial_frequency_hz"] = (
+                station_cfo * station / max(num_stations - 1, 1)
+            )
         link_settings = SDRSimulationConfig(
             **{
                 **{
                     field: getattr(settings, field)
                     for field in settings.__dataclass_fields__
                 },
-                "snr_db": snr_db,
-                "slave_initial_phase": settings.slave_initial_phase
-                * station
-                / max(num_stations - 1, 1),
-                "slave_initial_frequency_hz": (
-                    settings.slave_initial_frequency_hz
-                    * station
-                    / max(num_stations - 1, 1)
-                ),
+                **overrides,
             }
         )
+        slave_covariance = oscillator_covariance
+        if oscillator_profiles is not None:
+            slave_frequency_std = (
+                2.0 * math.pi * link_settings.frequency_process_std_hz
+            )
+            slave_covariance = torch.diag(
+                torch.tensor(
+                    [
+                        link_settings.phase_process_std_rad**2,
+                        slave_frequency_std**2,
+                    ],
+                    dtype=REAL_DTYPE,
+                    device=device,
+                )
+            )
         slave = Oscillator(
             link_settings.slave_initial_phase,
             2.0 * math.pi * link_settings.slave_initial_frequency_hz,
             settings.sync_interval,
-            oscillator_covariance,
+            slave_covariance,
             device,
             generator,
         )
@@ -219,9 +375,21 @@ def run_scheduled_star(
         measurement_noise = 0.5 * _measurement_covariance(
             link_settings, preamble, device
         )
+        # White-FM capture-time walk of the PAIR: reference-side plus
+        # slave-side (identical to the original expression when the
+        # two share one noise class).
+        white_fm_phase_variance = (
+            0.5
+            * (
+                reference_phase_walk_std**2
+                + link_settings.phase_noise_std_rad**2
+            )
+            * interval_samples
+        )
         ekf = PhaseFrequencyEKF(
             settings.sync_interval,
-            2.0 * oscillator_covariance
+            oscillator_covariance
+            + slave_covariance
             + torch.diag(
                 torch.tensor(
                     [white_fm_phase_variance, flicker.innovation_variance],
@@ -239,27 +407,45 @@ def run_scheduled_star(
                 )
             ),
         )
-        links.append(
-            {
-                "station": station,
-                "settings": link_settings,
-                "slave": slave,
-                "forward": forward,
-                "reverse": reverse,
-                "synchronizer": SDRSynchronizer(link_settings, preamble),
-                "noise": measurement_noise,
-                "ekf": ekf,
-                "budget": float(budgets_rad[station - 1]),
-                "pending": {},
-                "corrections": torch.zeros(
-                    (), dtype=REAL_DTYPE, device=device
-                ),
-                "acquired": False,
-                "loaded": False,
-                "settled": 0,
-                "calibrated": False,
-            }
-        )
+        link = {
+            "station": station,
+            "settings": link_settings,
+            "slave": slave,
+            "forward": forward,
+            "reverse": reverse,
+            "synchronizer": SDRSynchronizer(link_settings, preamble),
+            "noise": measurement_noise,
+            "ekf": ekf,
+            "budget": float(budgets_rad[station - 1]),
+            "pending": {},
+            "corrections": torch.zeros(
+                (), dtype=REAL_DTYPE, device=device
+            ),
+            "acquired": False,
+            "loaded": False,
+            "settled": 0,
+            "calibrated": False,
+        }
+        if multi_fidelity:
+            micro_settings = replace(link_settings, timing_jitter_samples=0)
+            micro_forward = SDRRadioLink(
+                micro_settings, micro_preamble, device, generator,
+                mirror_of=forward,
+            )
+            micro_reverse = SDRRadioLink(
+                micro_settings, micro_preamble, device, generator,
+                mirror_of=forward,
+            )
+            link["micro_forward"] = micro_forward
+            link["micro_reverse"] = micro_reverse
+            link["micro_noise"] = _micro_measurement_covariance(
+                link_settings, micro_sequence_length, micro_cp_length,
+                device,
+            )
+            link["micro_expected_start"] = (
+                micro_settings.capture_guard_samples - micro_forward.l_min
+            )
+        links.append(link)
 
     capture_samples = links[0]["forward"].input_length + links[0]["forward"].l_tot - 1
     exchange_fraction = (
@@ -269,14 +455,31 @@ def run_scheduled_star(
     if capacity is None:
         capacity = max(1, int(1.0 / exchange_fraction))
     chain_bias = math.radians(settings.twoway_chain_asymmetry_deg)
+    micro_cost = 1.0
+    if multi_fidelity:
+        micro_capture_samples = (
+            links[0]["micro_forward"].input_length
+            + links[0]["micro_forward"].l_tot
+            - 1
+        )
+        micro_cost = micro_capture_samples / capture_samples
+    whittle_trigger = _violation_probability(trigger_fraction, 1.0)
+
+    def _settling(link) -> bool:
+        return not (link["calibrated"] and link["settled"] >= 6)
 
     residual_rows: list[list[torch.Tensor]] = [[] for _ in links]
     serviced_rows: list[list[bool]] = [[] for _ in links]
+    micro_rows: list[list[bool]] = [[] for _ in links]
     steady_history: list[bool] = []
     gain_history: list[torch.Tensor] = []
-    exchanges_done = 0
+    exchanges_done = 0.0
+    roundrobin_next = 0
 
     for iteration in range(settings.num_iterations):
+        if budget_updates is not None and iteration in budget_updates:
+            for link, new_budget in zip(links, budget_updates[iteration]):
+                link["budget"] = float(new_budget)
         reference.step()
         flicker_now = flicker.step()
         reference.state[1] = reference.state[1] + (flicker_now - flicker_previous)
@@ -318,26 +521,89 @@ def run_scheduled_star(
 
         # ---- the scheduler --------------------------------------
         if policy == "uniform":
-            chosen = links[: capacity]
+            ordered = list(links)
+        elif policy == "roundrobin":
+            rotation = [
+                links[(roundrobin_next + index) % len(links)]
+                for index in range(len(links))
+            ]
+            ordered = [link for link in links if _settling(link)] + [
+                link for link in rotation if not _settling(link)
+            ]
+            roundrobin_next = (roundrobin_next + capacity) % len(links)
         else:
             candidates = []
             for link in links:
-                predicted_std = math.sqrt(
-                    max(link["ekf"].covariance[0, 0].item(), 0.0)
-                )
-                urgency = predicted_std / link["budget"]
-                settling = not (
-                    link["calibrated"] and link["settled"] >= 6
-                )
+                settling = _settling(link)
+                if policy == "oracle":
+                    # Genie: the TRUE residual, unobservable online.
+                    urgency = abs(
+                        wrap_phase(
+                            reference.state[0] - link["slave"].state[0]
+                        ).item()
+                    ) / link["budget"]
+                    eligible = urgency >= trigger_fraction
+                elif policy == "whittle":
+                    # One-step growth of the predicted budget-violation
+                    # probability if this link coasts one more interval.
+                    ekf = link["ekf"]
+                    sigma_now = math.sqrt(
+                        max(ekf.covariance[0, 0].item(), 0.0)
+                    )
+                    coasted = (
+                        ekf.transition
+                        @ ekf.covariance
+                        @ ekf.transition.T
+                        + ekf.process_covariance
+                    )
+                    sigma_next = math.sqrt(max(coasted[0, 0].item(), 0.0))
+                    risk_next = _violation_probability(
+                        sigma_next, link["budget"]
+                    )
+                    urgency = risk_next - _violation_probability(
+                        sigma_now, link["budget"]
+                    )
+                    eligible = risk_next >= whittle_trigger
+                else:  # "scheduled" (the original rule)
+                    predicted_std = math.sqrt(
+                        max(link["ekf"].covariance[0, 0].item(), 0.0)
+                    )
+                    urgency = predicted_std / link["budget"]
+                    eligible = urgency >= trigger_fraction
                 if settling:
                     urgency = float("inf")
-                if settling or urgency >= trigger_fraction:
+                if settling or eligible:
                     candidates.append((urgency, link))
             candidates.sort(key=lambda item: -item[0])
-            chosen = [link for _, link in candidates[:capacity]]
+            ordered = [link for _, link in candidates]
 
-        for link in chosen:
-            exchanges_done += 1
+        if multi_fidelity:
+            chosen = []
+            capacity_left = float(capacity)
+            for link in ordered:
+                mode = "full"
+                if not _settling(link) and link["acquired"]:
+                    # Micro-eligible: the frequency posterior predicts
+                    # less phase drift over the correction horizon than
+                    # half the budget, so a phase-only pilot suffices.
+                    frequency_std = math.sqrt(
+                        max(link["ekf"].covariance[1, 1].item(), 0.0)
+                    )
+                    horizon = (
+                        settings.correction_latency_intervals + 1
+                    ) * settings.sync_interval
+                    if frequency_std * horizon < 0.5 * link["budget"]:
+                        mode = "micro"
+                cost = micro_cost if mode == "micro" else 1.0
+                if capacity_left + 1e-9 < cost:
+                    continue
+                capacity_left -= cost
+                chosen.append((link, mode))
+        else:
+            chosen = [(link, "full") for link in ordered[:capacity]]
+
+        for link, service_mode in chosen:
+            exchanges_done += micro_cost if service_mode == "micro" else 1.0
             slave = link["slave"]
             if settings.sample_clock_offset_ppm is not None:
                 sfo = settings.sample_clock_offset_ppm
@@ -348,6 +614,65 @@ def run_scheduled_star(
                     / (2.0 * math.pi * settings.carrier_frequency_hz)
                     * 1e6
                 )
+            if service_mode == "micro":
+                ekf = link["ekf"]
+                capture_fwd = link["micro_forward"].capture(
+                    reference, slave, iteration, sfo
+                )
+                reference.state[0] = wrap_phase(
+                    reference.state[0] + capture_fwd.lo_walk_end
+                )
+                capture_rev = link["micro_reverse"].capture(
+                    slave, reference, iteration, -sfo
+                )
+                slave.state[0] = wrap_phase(
+                    slave.state[0] + capture_rev.lo_walk_end
+                )
+                micro_start = (
+                    link["micro_expected_start"] + micro_cp_length
+                )
+                detected_f, phase_f = _estimate_micro_phase(
+                    capture_fwd.samples,
+                    micro_preamble.long_sequence,
+                    micro_start,
+                    ekf.state[1],
+                    link["settings"].sample_period,
+                )
+                detected_r, phase_r = _estimate_micro_phase(
+                    capture_rev.samples,
+                    micro_preamble.long_sequence,
+                    micro_start,
+                    -ekf.state[1],
+                    link["settings"].sample_period,
+                )
+                if not (detected_f and detected_r):
+                    continue  # airtime spent even on a miss
+                combined_half = wrap_phase(
+                    wrap_phase(phase_f - phase_r) / 2.0 + chain_bias
+                )
+                measurement = _pick_half_phase(
+                    combined_half, wrap_phase(ekf.state[0])
+                )
+                frequency_holdover = ekf.state[1].clone()
+                ekf.measurement_covariance = link["micro_noise"]
+                ekf.update(
+                    torch.stack(
+                        (
+                            torch.cos(measurement),
+                            torch.sin(measurement),
+                            frequency_holdover,
+                        )
+                    )
+                )
+                ekf.measurement_covariance = link["noise"]
+                predicted = ekf.state.clone()
+                for _ in range(settings.correction_latency_intervals):
+                    predicted = ekf.transition @ predicted
+                link["pending"][
+                    iteration + max(settings.correction_latency_intervals, 1)
+                ] = _quantize_correction(predicted, settings)
+                continue
+
             capture_fwd = link["forward"].capture(
                 reference, slave, iteration, sfo
             )
@@ -404,9 +729,12 @@ def run_scheduled_star(
             ] = _quantize_correction(predicted, settings)
 
         remainder = max(0, interval_samples - 2 * capture_samples)
-        if settings.phase_noise_std_rad > 0.0 and remainder > 0:
-            walk_std = settings.phase_noise_std_rad * math.sqrt(remainder)
+        if remainder > 0:
             for link in links:
+                phase_walk_std = link["settings"].phase_noise_std_rad
+                if phase_walk_std <= 0.0:
+                    continue
+                walk_std = phase_walk_std * math.sqrt(remainder)
                 link["slave"].state[0] = wrap_phase(
                     link["slave"].state[0]
                     + torch.randn(
@@ -416,9 +744,12 @@ def run_scheduled_star(
                     * walk_std
                 )
 
-        chosen_set = {id(link) for link in chosen}
-        for row, serviced_row, link in zip(
-            residual_rows, serviced_rows, links
+        chosen_set = {id(link) for link, _ in chosen}
+        micro_set = {
+            id(link) for link, mode in chosen if mode == "micro"
+        }
+        for row, serviced_row, micro_row, link in zip(
+            residual_rows, serviced_rows, micro_rows, links
         ):
             row.append(
                 wrap_phase(
@@ -426,6 +757,7 @@ def run_scheduled_star(
                 ).clone()
             )
             serviced_row.append(id(link) in chosen_set)
+            micro_row.append(id(link) in micro_set)
         steady_history.append(
             all(link["loaded"] and link["calibrated"] for link in links)
         )
@@ -458,4 +790,9 @@ def run_scheduled_star(
         airtime_used_fraction=airtime_used,
         airtime_uniform_fraction=(num_stations - 1) * exchange_fraction,
         device=device,
+        serviced_micro=(
+            torch.tensor(micro_rows, dtype=torch.bool)
+            if multi_fidelity
+            else None
+        ),
     )

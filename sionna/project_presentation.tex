@@ -1,0 +1,1100 @@
+% Phase Synchronization for Distributed Coherent Arrays
+% Full project deck: motivation, method, results, future directions.
+% Compile:  tectonic project_presentation.tex
+% Layout rule: every data figure gets a FULL page ([plain] frame,
+% maximum size); explanation lives on the companion slide before it.
+% Every number was regenerated and verified on 2026-08-05/06 by
+% re-running the repository (seed 0 unless noted).
+
+\documentclass[aspectratio=169,10pt]{beamer}
+\usetheme{Madrid}
+\usecolortheme{seahorse}
+\setbeamertemplate{navigation symbols}{}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\graphicspath{{figures/}{figures/deck/}}
+
+\newcommand{\takeaway}[1]{%
+  \vspace{2pt}\begin{beamercolorbox}[rounded=true,sep=4pt]{block title}%
+  \small\textbf{Takeaway:} #1\end{beamercolorbox}}
+
+% A full-page figure: no headline/footline, figure fills the page,
+% one caption line underneath.
+\newcommand{\figpage}[2]{%
+  \begin{frame}[plain]
+    \begin{center}
+      \includegraphics[height=0.79\paperheight,width=0.97\paperwidth,
+                       keepaspectratio]{#1}\\[2pt]
+      \parbox{0.94\paperwidth}{\scriptsize\textbf{#2}}
+    \end{center}
+  \end{frame}}
+
+\title[Distributed Phase Synchronization]{Phase Synchronization for
+Distributed Coherent Arrays}
+\subtitle{From oscillator physics to counted drone detections ---
+a waveform-level simulation study}
+\author{Chandler Stevenson}
+\institute{Princeton University}
+\date{August 2026}
+
+\begin{document}
+
+\begin{frame}
+  \titlepage
+  \begin{center}\scriptsize
+    Every number in this deck is regenerated from the accompanying
+    code (seed 0); commands to reproduce each figure are on the final
+    slide.
+  \end{center}
+\end{frame}
+
+\begin{frame}{Roadmap}
+  \tableofcontents
+\end{frame}
+
+% =====================================================================
+\section{Motivation: why phase coherence is worth fighting for}
+% =====================================================================
+
+\begin{frame}{The prize: $N$ radios that act as one aperture}
+  \begin{columns}[T]
+    \column{0.55\textwidth}
+    If $N$ base stations share one carrier phase, their fields
+    \emph{add} at a target:
+    \begin{itemize}
+      \item Transmit focusing: $N^2\times$ one station's power
+            ($2\times$ from total power, $2\times$ again because
+            fields add --- 2 stations in phase deliver $4\times$).
+      \item Radar (round trip): another $N$ on receive,
+      \[
+        \mathrm{SNR}_{\det} = N^3\, G^2 \times \text{single station},
+      \]
+      where $G\in[0,1]$ is the \emph{array coherent gain} and enters
+      \textbf{squared} --- sync errors cost both legs.
+    \end{itemize}
+    \column{0.42\textwidth}
+    \begin{block}{\small No sync at all}
+      \small Two free-running transmitters average $G=50\%$ and sweep
+      through $0\%$ (fields cancel) as their phases drift through the
+      circle. The coherent bonus simply does not exist.
+    \end{block}
+    \begin{block}{\small The community yardstick}
+      \small Total phase error $\le 18^\circ$ (314\,mrad)
+      $\Rightarrow$ $\ge 90\%$ of ideal gain at large $N$
+      ($G_2=\cos^2(\theta/2)$; at $N=2$, $18^\circ$ still gives
+      97.6\%).
+    \end{block}
+  \end{columns}
+\end{frame}
+
+\begin{frame}{The obstacle: every station has its own clock}
+  \begin{columns}[T]
+    \column{0.58\textwidth}
+    \small The 915\,MHz carrier is synthesized from an imperfect
+    crystal; two stations disagree in frequency \emph{and} phase:
+    \begin{center}\scriptsize
+    \begin{tabular}{@{}llrr@{}}
+      \toprule
+      class & example & accuracy & initial CFO \\
+      \midrule
+      OCXO & macro BS, GPS-disciplined & $\pm50$\,ppb & $\sim$46\,Hz \\
+      TCXO & small cell & $\pm100$\,ppb & $\sim$92\,Hz \\
+      SDR  & bench USRP, no GPSDO & $\pm2$\,ppm & $\sim$1830\,Hz \\
+      \bottomrule
+    \end{tabular}
+    \end{center}
+    \small Even after frequency lock the phase \emph{random-walks}:
+    white-FM noise alone accumulates $\sim$45\,mrad RMS per 50\,ms at
+    the default class. The SDR class cannot hold carrier phase at all
+    at 50\,ms cadence (residual $\sim$2\,rad).
+    \column{0.40\textwidth}
+    \begin{block}{\small The measurement problem}
+      \small A radio can only measure
+      \[
+        m = \underbrace{\theta}_{\text{oscillators}}
+          + \underbrace{\phi_c}_{\text{channel}}
+      \]
+      --- the two are entangled in every pilot. Separating them is
+      half the algorithm design.
+    \end{block}
+    \begin{block}{\small Standards don't cover this}
+      \small 3GPP sync budgets are \emph{time} alignment
+      ($\mu$s); a JSAC 2023 cell-free prototype measured
+      $>20^\circ$ LO drift per 7.5\,ms between COTS units.
+    \end{block}
+  \end{columns}
+\end{frame}
+
+\begin{frame}{What failure looks like --- and what the loop buys}
+  \small The next page shows the whole problem and the whole fix in
+  one figure (one-way loop, walkthrough form):
+  \begin{itemize}
+    \item \textbf{Top panel} --- the raw phase difference between two
+      free-running radios: it wraps through $\pm\pi$ roughly
+      \textbf{7{,}500 times in 5 seconds} (red). With the closed loop
+      on, the same physics holds flat at zero (blue).
+    \item \textbf{Middle panel} --- zoom on the held residual: steady
+      RMS \textbf{69.6\,mrad}, comfortably under the 314\,mrad
+      (18$^\circ$) coherence line.
+    \item \textbf{Bottom panel} --- the estimator's eyesight: the EKF
+      tracks the phase to \textbf{12\,mrad}.
+  \end{itemize}
+  \takeaway{The estimator measures the phase to 12 milliradians, but
+  the loop only holds it to 70 milliradians. Roughly a factor of six
+  is lost between measurement and actuation. That gap is caused by
+  correction cadence and latency rather than estimation quality, and
+  it is the central research finding of this project.}
+\end{frame}
+
+\figpage{story_01.png}{The one-way synchronization walkthrough. The top panel shows the phase difference between two free-running radios, which wraps around roughly 7{,}500 times in five seconds (red); the blue trace shows the same radios with the control loop running, holding the phase flat. The middle panel zooms in on the held residual (69.6 milliradians RMS), and the bottom panel shows that the estimator itself tracks the phase to 12 milliradians.}
+
+\begin{frame}{The stakes, in meters}
+  \small Converting sync quality into drone-detection range
+  ($N=6$ stations, 1\,W each, $-15$\,dBsm quadcopter, Swerling-1,
+  $P_d\ge0.9$ at $P_{fa}=10^{-6}$):
+  \begin{center}
+  \begin{tabular}{@{}lrr@{}}
+    \toprule
+    & detection range & vs.\ single station \\
+    \midrule
+    single station            &  757\,m & $1.00\times$ \\
+    free-running (no sync)    & 1184\,m & $1.57\times$ \\
+    published consensus (DFPC)& 1972\,m & $2.61\times$ \\
+    \textbf{this work (star methods)} & \textbf{2896--2899\,m} & $\mathbf{3.83\times}$ \\
+    perfect sync (bound)      & 2900\,m & $3.83\times$ \\
+    \bottomrule
+  \end{tabular}
+  \end{center}
+  \takeaway{Synchronization quality is worth $\sim$1.7\,km of
+  detection radius; the methods built here operate within 0.1\% of
+  the physical bound.}
+\end{frame}
+
+% =====================================================================
+\section{Method: a waveform-level, impairment-complete testbed}
+% =====================================================================
+
+\begin{frame}{Philosophy: no statistics-level shortcuts}
+  \begin{columns}[T]
+    \column{0.52\textwidth}
+    \small Every claim is validated on \textbf{sampled IQ streams}
+    through a full physical layer (Sionna, 3GPP TDL-D multipath), and
+    every estimate is graded against an \textbf{oracle twin} of the
+    same capture with noise removed --- ground truth, never the
+    receiver's own opinion of itself.
+    \begin{block}{\small Signal chain (every capture)}
+      \scriptsize clock/NCO $\to$ ZC frame $\to$ PA + 12-bit DAC $\to$
+      TDL-D multipath + shadowing + AWGN $\to$ slave LO + SFO + phase
+      noise $\to$ IQ imbalance + AGC + 12-bit ADC $\to$ detect /
+      time / coarse CFO / fine CFO / phase $\to$ iterated EKF $\to$
+      quantized NCO correction (arrives \emph{late}).
+    \end{block}
+    \column{0.46\textwidth}
+    \begin{block}{\small Impairments always on (defaults)}
+      \scriptsize 3GPP TR 38.901 TDL-D, 100\,ns delay spread;
+      log-normal shadowing (2\,dB, AR(1) 10\,s); PA soft clipping;
+      12-bit DAC/ADC; AGC; IQ imbalance 0.2\,dB/$1^\circ$; DC offset;
+      $\pm$32-sample timing jitter; SFO tied to the same crystal as
+      CFO; white-FM + white-PM + flicker-FM + frequency-walk
+      oscillator noise; initial CFO 1.5\,kHz; correction latency 1
+      interval; NCO quantization $2\pi/2^{16}$.
+    \end{block}
+    \small Deterministic: same seed $\Rightarrow$ byte-identical run.
+    41 regression tests.
+  \end{columns}
+\end{frame}
+
+\begin{frame}{What a sync pilot actually is (not a tone)}
+  \small The next page shows one capture at the raw-sample level. How
+  to read it:
+  \begin{itemize}
+    \item \textbf{Transmitted frame}: Zadoff--Chu sequences ---
+      constant envelope (PA-friendly), 99\% of power spread across
+      $\sim$800\,kHz. A short training field (16-sample ZC $\times$ 16
+      repeats) for detection and coarse CFO, then two long
+      cyclic-prefixed ZC-2047 fields for fine CFO and phase.
+      4.6\,ms per capture at 1\,MS/s.
+    \item \textbf{Received frame}: the same waveform after multipath,
+      noise, and hardware --- next to its \emph{oracle twin} (same
+      channel, no noise), the grading reference.
+    \item \textbf{Constellation}: a ring, not points --- ZC is a
+      polyphase sequence; impairments thicken the ring.
+    \item \textbf{Correlations}: the STF self-correlation plateau
+      (detection) and the single sharp matched-filter peak (sample
+      timing through multipath) --- the two things a tone cannot do.
+  \end{itemize}
+\end{frame}
+
+\figpage{iq_01.png}{A single synchronization pilot, shown at the level of raw samples. The panels show the transmitted Zadoff--Chu frame, the signal that actually arrived after the multipath channel and hardware impairments, the received constellation, and the correlation peaks the receiver uses to detect the pilot and align its timing.}
+
+\begin{frame}{The estimator and the controller}
+  \small Two-state iterated EKF per link, $x=[\theta,\omega]^\top$:
+  \[
+    F=\begin{bmatrix}1 & T\\ 0 & 1\end{bmatrix},\qquad
+    x^-\!=Fx,\quad P^-\!=FPF^\top+Q,\qquad
+    z=[\cos m,\ \sin m,\ \omega_{\rm meas}]^\top
+  \]
+  \begin{itemize}
+    \item Cosine/sine embedding avoids phase-wrap discontinuities;
+      6 Gauss--Newton relinearizations; Joseph-form covariance.
+    \item $R$ from physics, not tuning: phase variance
+      $\tfrac{1}{2\,\mathrm{SNR}\,L} + \sigma_{pn}^2(\text{offset} +
+      \text{span}/3) + \sigma_{wpm}^2/L$.
+    \item Control with latency: correction
+      $=\mathrm{quantize}(F^{L}x^{+})$ loads $L$ intervals late
+      (default 1). The controller forward-predicts through its own
+      delay --- what survives is its \emph{frequency-estimate error}
+      integrated over the horizon. This term is the novelty seed.
+  \end{itemize}
+  \takeaway{The loop is honest end-to-end: physical measurement noise,
+  quantized actuation, late corrections.}
+\end{frame}
+
+\begin{frame}{The key equation: two-way reciprocity}
+  \small Forward and reverse pilots cross the \emph{same channel
+  realization} within one interval:
+  \[
+    m_{\rm fwd}=\mathrm{wrap}(\theta+\phi_c),\qquad
+    m_{\rm rev}=\mathrm{wrap}(-\theta+\phi_c)
+  \]
+  \[
+    \hat\theta=\mathrm{wrap}\!\left(
+      \frac{\mathrm{wrap}(m_{\rm fwd}-m_{\rm rev})}{2}
+      + b_{\rm chain} - \hat\omega\,\tau_{\rm TDD}/2\right)
+  \]
+  The channel phase $\phi_c$ cancels --- the \emph{actual crystals}
+  align, which is what open-loop coherent combining needs.
+  \begin{block}{\small Two lessons discovered by simulation}
+    \small (1) The half-difference carries a global $\pi$ ambiguity;
+    the 1-bit combining check that resolves it must be
+    \emph{periodic} --- a coasting station can drift across the
+    branch. (2) Never coast during acquisition: residual CFO makes
+    one skipped interval fatal.
+  \end{block}
+\end{frame}
+
+\begin{frame}{How to read every scoreboard in this deck}
+  \small All sync methods are judged on ONE standard three-panel
+  figure (identical axes, units, thresholds --- so methods can be
+  compared side by side):
+  \begin{enumerate}
+    \item \textbf{Top --- the phase on the circle} ($\pm\pi$): red
+      dots = free-running, rolling over constantly; blue = the loop
+      holding it. The problem and the fix at a glance.
+    \item \textbf{Middle --- $|$residual$|$ in mrad, log axis},
+      against the red 314\,mrad = 18$^\circ$ line (below it $=$
+      90\%+ coherent gain). The yellow box prices the COST: the
+      share of channel time spent on sync pilots.
+    \item \textbf{Bottom --- 2-station coherent gain in \%}, against
+      the 90\% threshold; red dots show the same gain with NO sync
+      (sweeping 100\%$\to$0\% as the drift passes through
+      anti-phase).
+  \end{enumerate}
+  \takeaway{Judge every method by accuracy AND cost together ---
+  e.g.\ micro beats two-way on residual (28 vs 84\,mrad) but pays
+  more airtime (26\% vs 19\%).}
+\end{frame}
+
+% =====================================================================
+\section{Synchronization results: six methods, one scoreboard}
+% =====================================================================
+
+\begin{frame}{Method 1 --- one-way: track what you can hear}
+  \small\textbf{How it works}, one interval at a time:
+  \begin{enumerate}
+    \item The master transmits the known ZC pilot frame.
+    \item The slave detects it, estimates timing, frequency offset,
+      and phase from the matched filter --- but every phase it
+      measures is the \emph{sum} $m=\theta+\phi_c$ (oscillators
+      $+$ channel).
+    \item The EKF tracks $[\,m,\ \omega\,]$ and the slave retunes its
+      own NCO to drive $m\to0$.
+  \end{enumerate}
+  \textbf{What that buys and what it costs} (next page):
+  \begin{itemize}
+    \item The \emph{observable} is held to \textbf{70\,mrad} (orange)
+      --- the link looks perfectly locked.
+    \item But $\theta$ and $\phi_c$ are not separately observable
+      from a one-way pilot, so the loop simply absorbs the channel:
+      the true crystal offset parks at $\theta=-\phi_c=$
+      \textbf{2906\,mrad} (blue), and the 2-station coherent gain is
+      \textbf{2.2\%} --- nearly anti-phase while ``locked.''
+  \end{itemize}
+  \takeaway{Cheapest possible loop (9.6\% airtime), and fine for
+  serving users with CSI --- but for open-loop coherent combining the
+  channel must be \emph{cancelled}, not absorbed.}
+\end{frame}
+
+\figpage{oneway_01.png}{The one-way method's scoreboard. The loop successfully holds the quantity it can measure (the oscillator phase plus the channel phase) to 70 milliradians, but the true oscillator-to-oscillator offset settles at 2906 milliradians, because the channel phase was folded into the correction. As a result the two stations combine at only 2.2 percent of their ideal coherent power, even though the link appears locked.}
+
+\begin{frame}{Method 2 --- two-way: cancel the channel by symmetry}
+  \small\textbf{How it works}, one interval at a time:
+  \begin{enumerate}
+    \item Station A transmits its pilot; B captures it and measures
+      $m_{\rm fwd}=\mathrm{wrap}(\theta+\phi_c)$.
+    \item They swap roles (TDD, same frequency, $\sim$1\,ms
+      turnaround); A measures
+      $m_{\rm rev}=\mathrm{wrap}(-\theta+\phi_c)$ --- the channel is
+      \emph{reciprocal}, so $\phi_c$ is the same in both directions.
+    \item Half the difference isolates the crystals:
+      $\hat\theta = \mathrm{wrap}(m_{\rm fwd}-m_{\rm rev})/2$
+      ($+$ chain-bias and turnaround-drift corrections). $\phi_c$
+      cancels exactly.
+    \item The EKF filters $\hat\theta$; the slave applies the
+      forward-predicted, quantized correction one interval later.
+  \end{enumerate}
+  \textbf{Measured} (next page): true crystal residual
+  \textbf{83.5\,mrad} RMS, coherent gain \textbf{99.83\%}
+  (3.99$\times$ of the $4\times$ ideal), at \textbf{19.1\%} airtime
+  (two 4.8\,ms captures per 50\,ms).
+  \takeaway{The actual crystals align, so the array can combine
+  toward \emph{any} target with known geometry --- no per-target
+  calibration. This is the workhorse every refinement builds on.}
+\end{frame}
+
+\figpage{twoway_01.png}{The two-way method's scoreboard. Because the forward and reverse pilots cross the same channel, half the difference of the two measurements removes the channel phase entirely. The true oscillator offset settles at 83.5 milliradians, the two-station coherent gain reaches 99.83 percent of ideal, and the pilots occupy 19.1 percent of the channel.}
+
+\begin{frame}{Method 3 --- micro: once locked, phase is cheap}
+  \small\textbf{The insight:} the closed-loop residual is dominated by
+  drift accumulated \emph{between} corrections. Timing and wide-range
+  CFO need the full 4.6\,ms frame --- but once the loop is locked,
+  \emph{phase alone} can be measured from a very short pilot.
+  \par\medskip
+  \textbf{How it works:}
+  \begin{enumerate}
+    \item Run the full two-way exchange once per 50\,ms interval
+      (detection, timing, coarse/fine CFO, phase), exactly as in
+      Method 2.
+    \item Between full frames, insert $M{=}4$ tiny reciprocal
+      \emph{micro-pilots}: one CP-protected ZC-255 sequence, 287
+      samples $=$ \textbf{0.287\,ms} (vs.\ 4.6\,ms) --- no detection
+      preamble needed.
+    \item The receiver \emph{rides the tracking state}: it derotates
+      with its current frequency estimate and correlates at the
+      expected arrival time. Corrections issue every sub-interval.
+  \end{enumerate}
+  \textbf{Measured} (next page): \textbf{28.1\,mrad} at
+  \textbf{26.0\%} airtime, gain 99.98\%. The pilot-count knob:
+  $M{=}0/2/4/9 \to 71.5/35.3/27.9/22.8$\,mrad at
+  $19.1/22.6/26.0/34.6\%$ airtime.
+  \takeaway{$\sim$3$\times$ tighter than two-way for $+$7 points of
+  channel --- accuracy bought with airtime.}
+\end{frame}
+
+\begin{frame}{Method 4 --- hybrid: a smarter observer, cheaper pilots}
+  \small\textbf{The insight:} one-way pilots are cheap and DO carry
+  information --- they just can't tell oscillator from channel. Give
+  the filter a third state and let it \emph{model} the entanglement:
+  \[
+    x = [\ \theta\ \ \omega\ \ \phi_c\ ]^\top
+    \qquad\text{one-way pilots observe } \theta+\phi_c;\quad
+    \text{anchors observe } \theta \text{ alone.}
+  \]
+  \textbf{How it works:}
+  \begin{enumerate}
+    \item Most intervals: cheap \emph{one-way} micro-pilots track the
+      SUM $\theta+\phi_c$ --- enough to follow oscillator drift,
+      since $\phi_c$ moves slowly (a static channel barely moves at
+      all).
+    \item Every $K{=}5$ intervals: one full \emph{two-way anchor}
+      re-measures $\theta$ alone (channel cancelled), re-pinning the
+      split between the two states.
+  \end{enumerate}
+  \textbf{Measured} (next page): \textbf{33.8\,mrad} at
+  \textbf{14.9\%} airtime, gain 99.97\%. Anchor-cadence knob:
+  $K{=}1/5/20 \to 31.8/32.9/34.0$\,mrad --- the cadence is set by
+  \emph{channel} coherence time, not oscillator quality (with
+  Doppler at 0.2\,m/s, $K{=}20$ collapses to 1752\,mrad unless the
+  channel prior is matched).
+  \takeaway{Most of two-way's accuracy at $3/4$ of its cost --- the
+  accuracy-per-airtime winner, and (scaling section) the method that
+  stretches the array-size wall furthest.}
+\end{frame}
+
+\figpage{micro_01.png}{The micro-pilot method's scoreboard. Four short phase-only pilots inserted between the full two-way exchanges correct the drift more often, bringing the residual down to 28.1 milliradians at the cost of 26.0 percent of the channel.}
+
+\figpage{hybrid_01.png}{The hybrid method's scoreboard. Inexpensive one-way pilots track the drift most of the time, and a full two-way exchange every fifth interval re-separates the oscillator phase from the channel phase. The residual is 33.8 milliradians at only 14.9 percent of the channel, the best accuracy per unit of airtime of any method tested.}
+
+\begin{frame}{Method 5 --- consensus (DFPC): the published alternative}
+  \small\textbf{How it works} (Rashid \& Nanzer, IEEE TWC 2023): no
+  master at all. Each node measures the other's pilot and retunes
+  \emph{itself} by half its estimated offset --- both nodes move, and
+  the pair meets in the middle:
+  \[
+    \phi_a \leftarrow \phi_a - \tfrac{1}{2}\hat\theta,\qquad
+    \phi_b \leftarrow \phi_b + \tfrac{1}{2}\hat\theta .
+  \]
+  KF-DFPC adds a Kalman filter on the estimates. Reimplemented here
+  over the full physical layer:
+  \begin{center}\small
+  \begin{tabular}{@{}lrrl@{}}
+    \toprule
+    variant & residual & gain & note \\
+    \midrule
+    naive, as published & 3009\,mrad & 0.68\% & anti-phase capture \\
+    DFPC + reciprocity  & 153.0\,mrad & 99.42\% & next page \\
+    KF-DFPC + reciprocity & 82.8\,mrad & 99.83\% & page after \\
+    \bottomrule
+  \end{tabular}
+  \end{center}
+  \textbf{Why the published form breaks:} the paper assumes
+  channel-free measurements. Over a real channel each node's raw
+  measurement contains $\phi_c$, and the \emph{wrapped} symmetric
+  update then has TWO stable fixed points --- in-phase and
+  anti-phase. Both look ``converged''; this seed lands on the wrong
+  one (0.68\% gain). Granting the paper its assumed side channel
+  (``reciprocity steelman'') restores it; with filtering it reaches
+  the same physical floor as our two-way.
+  \takeaway{The idea is sound --- but statistics-level validation,
+  which never simulated a channel, could not see the second fixed
+  point. Waveform-level validation is not optional.}
+\end{frame}
+
+\figpage{dfpc_01.png}{The scoreboard for DFPC when it is granted the channel-free measurement exchange its publication assumes. Under that assumption the consensus update works as intended, settling at 153 milliradians and 99.42 percent coherent gain.}
+
+\figpage{kfdfpc_01.png}{The scoreboard for KF-DFPC, the Kalman-filtered variant of the consensus algorithm, under the same assumption. The filtering brings it to 82.8 milliradians and 99.83 percent coherent gain, matching the physical floor that our two-way method reaches.}
+
+\begin{frame}{All methods, identical physics}
+  \small The next page overlays every method's residual trajectory on
+  one log axis (same seed, same channel, same impairments):
+  \begin{center}\scriptsize
+    \begin{tabular}{@{}lrrr@{}}
+      \toprule
+      approach & residual (mrad) & coherent gain & airtime \\
+      \midrule
+      two-tier micro-pilot (ours) & 28.1 & 99.98\% & 26.0\% \\
+      decentralized hybrid (ours) & 33.4 & 99.97\% & 14.9\% \\
+      hybrid 1-way+anchors (ours) & 33.8 & 99.97\% & 14.9\% \\
+      KF-DFPC + reciprocity & 82.8 & 99.83\% & 19.1\% \\
+      two-way EKF (ours) & 83.5 & 99.83\% & 19.1\% \\
+      DFPC + reciprocity & 153.0 & 99.42\% & 19.1\% \\
+      DFPC naive (as published) & 3009.4 & 0.68\% & 19.1\% \\
+      \bottomrule
+    \end{tabular}
+  \end{center}
+  \takeaway{Every trajectory except naive DFPC settles below the
+  314\,mrad line; naive DFPC is pinned at $\sim$3000\,mrad --- the
+  anti-phase fixed point, flat and stable, which is precisely why
+  statistics-level validation never caught it.}
+\end{frame}
+
+\figpage{compare_01.png}{All seven methods run under identical physical conditions, with their residual trajectories overlaid on one logarithmic axis. Every method except naive DFPC settles below the 314-milliradian coherence threshold. Naive DFPC sits flat near 3000 milliradians: it has converged, but onto the anti-phase solution.}
+
+\begin{frame}{The error floor: measured to 12 milliradians, held only to 70}
+  \small The closed-loop residual decomposes into three terms:
+  \[
+    \sigma^2_{\rm total}\;\approx\;
+    \underbrace{\sigma_{pn}^2 f_s T}_{\text{drift: }45\,\mathrm{mrad}}
+    \;+\;
+    \underbrace{(\sigma_{\omega^+}\, L\, T)^2}_{\text{LATENCY: }38\,\mathrm{mrad}}
+    \;+\;
+    \underbrace{\sigma^2_{\rm track}}_{\text{estimation: }12\,\mathrm{mrad}}
+    \;\Rightarrow\;\sim\!70\,\mathrm{mrad\ (measured\ 69.6)}
+  \]
+  \begin{center}
+  \begin{tabular}{@{}lrr@{}}
+    \toprule
+    ablation (each isolates one term) & sees (mrad) & holds (mrad) \\
+    \midrule
+    full defaults & 12.0 & 69.6 \\
+    \texttt{--no-rf-impairments} (latency only) & 1.1 & 34.3 \\
+    \texttt{--correction-latency 0} (tracking only) & 12.3 & 12.3 \\
+    \bottomrule
+  \end{tabular}
+  \end{center}
+  \takeaway{The middle term --- actuation latency coupled to the
+  Kalman frequency posterior --- appears in no published sync
+  analysis (checked through Dec 2025). It is the dominant loss at
+  defaults and the primary publishable claim.}
+\end{frame}
+
+\begin{frame}{Method 6 --- decentralized hybrid: masterless, done right}
+  \small\textbf{How it works:} keep hybrid's 3-state estimation
+  (Method 4), but make the \emph{control} symmetric like DFPC's ---
+  each node retunes half-way toward the other, so neither is the
+  reference and the pair meets at its average clock.
+  \begin{itemize}
+    \item \textbf{At $N{=}2$} (next page): 33.4 vs.\ 33.8\,mrad ---
+      decentralizing the control is \emph{free}. Gained: no single
+      point of failure. Lost: a fixed datum (the common clock drifts
+      freely).
+    \item \textbf{At $N{>}2$} (page after): a true mesh --- shared
+      oscillators on a nearest-neighbor chain, degree-weighted
+      corrections, and \emph{periodic} 1-bit branch checks (a
+      one-shot $\pi$-check is not enough: slow mesh convergence lets
+      an edge drift to the wrong branch after an early check passes).
+  \end{itemize}
+  The \emph{update schedule} then decides everything:
+  \begin{center}
+  \begin{tabular}{@{}llrr@{}}
+    \toprule
+    control law & structure & gain @ $N{=}4$ & gain @ $N{=}6$ \\
+    \midrule
+    symmetric   & DFPC-style simultaneous updates & 74\% & 80\% \\
+    alternating & edges take turns (masterless)   & 99.9\% & 95.8\% \\
+    directed    & elected-root tree               & 99.9\% & 99.8\% \\
+    \bottomrule
+  \end{tabular}
+  \end{center}
+  \takeaway{The 20--25-point cost is not decentralization --- it is
+  \emph{simultaneous symmetric updates on shared nodes}. Taking turns
+  recovers most of it; an elected root all of it, with a
+  decentralized fault structure intact.}
+\end{frame}
+
+\figpage{dhybrid_01.png}{The decentralized hybrid pair. Each node retunes halfway toward the other, so there is no master station and no single point of failure. The accuracy, 33.4 milliradians, is statistically identical to the centralized version.}
+
+\figpage{mesh4_01.png}{A true four-station decentralized mesh using alternating updates. The stations synchronize over a nearest-neighbor chain with no reference station. The per-edge residuals are 36 to 40 milliradians, and the array holds 99.91 percent coherent gain while using 44.7 percent of the channel.}
+
+% =====================================================================
+\section{Scaling to $N$ stations: the airtime wall}
+% =====================================================================
+
+\begin{frame}{A real deployment: six stations, one shared channel}
+  \small The network simulation places stations uniformly at random
+  in a 500\,m disc; each link's SNR follows log-distance path loss.
+  Next page, two-way at $N=6$:
+  \begin{center}\scriptsize
+  \begin{tabular}{@{}rrrrr@{}}
+    \toprule
+    station & distance & link SNR & steady residual & detect \\
+    \midrule
+    1 & 414\,m & 22.2\,dB & 66.2\,mrad & 100\% \\
+    2 & 766\,m & 15.0\,dB & 76.5\,mrad & 100\% \\
+    3 & 782\,m & 14.8\,dB & 72.5\,mrad & 100\% \\
+    4 & 667\,m & 16.6\,dB & 70.0\,mrad & 100\% \\
+    5 & 634\,m & 17.2\,dB & 68.2\,mrad & 100\% \\
+    \bottomrule
+  \end{tabular}
+  \end{center}
+  \takeaway{Array coherent gain 99.65\% --- but the pilots already
+  occupy \textbf{95.6\%} of the shared channel at $N{=}6$. Accuracy
+  is not the scaling problem; \emph{airtime} is.}
+\end{frame}
+
+\figpage{net6_01.png}{A six-station network sharing one channel. The map shows the random deployment with each link's signal-to-noise ratio; the other panels show each station's residual over time and the array's coherent gain, which averages 99.65 percent. The cost is that the synchronization pilots occupy 95.6 percent of the channel.}
+
+\begin{frame}{Two trades govern everything}
+  \begin{columns}[T]
+    \column{0.48\textwidth}
+    \begin{block}{\small Trade 1: cadence (next page)}
+      \small Longer sync interval = more drift between corrections,
+      fewer pilots:
+      \begin{center}\scriptsize
+      \begin{tabular}{@{}rrr@{}}
+        \toprule
+        interval & residual & airtime \\
+        \midrule
+        10\,ms & 32.8\,mrad & 95.6\% \\
+        50\,ms & 83.5\,mrad & 19.1\% \\
+        200\,ms & 243.5\,mrad & 4.8\% \\
+        500\,ms & 1035.9\,mrad & 1.9\% \\
+        \bottomrule
+      \end{tabular}
+      \end{center}
+      50\,ms is one point on a curve, not a magic number.
+    \end{block}
+    \column{0.48\textwidth}
+    \begin{block}{\small Trade 2: array size (two pages on)}
+      \small Pilots share ONE channel, so airtime grows linearly
+      with $N$ (hybrid shown):
+      \begin{center}\scriptsize
+      \begin{tabular}{@{}rrr@{}}
+        \toprule
+        $N$ & worst residual & airtime \\
+        \midrule
+        2 & 26.1\,mrad & 14.9\% \\
+        4 & 30.7\,mrad & 44.7\% \\
+        8 & 45.6\,mrad & 104.4\% \\
+        12 & 45.6\,mrad & 164.1\% \\
+        \bottomrule
+      \end{tabular}
+      \end{center}
+      Accuracy survives scaling; the \emph{channel} does not ---
+      the wall sits between $N{=}4$ and $N{=}8$.
+    \end{block}
+  \end{columns}
+  \takeaway{Cadence is the currency; the wall is a scheduling
+  problem --- which is where this project's frontier lies.}
+\end{frame}
+
+\figpage{sweepT_01.png}{The cadence trade for the two-way method. Synchronizing more often holds the phase tighter but consumes more of the channel: a 10-millisecond interval achieves 33 milliradians but costs 95.6 percent of the channel, while a 500-millisecond interval costs only 1.9 percent but lets the residual grow past one radian. The 50-millisecond default is one point on this curve, not a special value.}
+
+\figpage{sweepN_01.png}{The station-count trade for the hybrid method. Accuracy survives scaling, with the worst station staying under 46 milliradians at twelve stations. However, because all pilots share a single channel, the total pilot airtime grows linearly with the number of stations and exceeds the entire channel somewhere between four and eight stations.}
+
+\begin{frame}{The full 2-D answer: which method scales best?}
+  \small Sweeping cadence $\times$ array size together; for each
+  method and cadence, the largest $N$ that fits the channel and the
+  gain held there (next page). Measured verdict:
+  \begin{center}\scriptsize
+  \begin{tabular}{@{}lrrr@{}}
+    \toprule
+    cadence & two-way & micro & hybrid \\
+    \midrule
+    25\,ms  & $N{=}3$ & $N{=}2$ & $N{=}4$ \\
+    50\,ms  & $N{=}6$ & $N{=}4$ & $N{=}7$ \\
+    100\,ms & $N{=}11$ & $N{=}8$ & $N{=}14$ \\
+    200\,ms & $N{=}21+$ (96.1\%, worst 256\,mrad) & $N{=}16$ &
+      $N{=}27+$ (99.7\%, worst 75\,mrad) \\
+    \bottomrule
+  \end{tabular}
+  \end{center}
+  \takeaway{Hybrid dominates the whole grid: at 200\,ms it holds 20
+  stations at 99.7\% gain on 71\% of the channel, while two-way's
+  worst station has degraded to 256\,mrad and micro fits only 16.
+  Cheap pilots + a smarter observer = the furthest wall.}
+\end{frame}
+
+\figpage{scalability_01.png}{The combined answer across cadence and array size. For each method and each synchronization interval, the figure reports the largest array that fits in the channel and the coherent gain the array holds at that size. The hybrid method supports the largest arrays at every cadence tested.}
+
+% =====================================================================
+\section{The application: counted drone detections}
+% =====================================================================
+
+\begin{frame}{From sync gain to detection range (analytic layer)}
+  \small $\mathrm{SNR}_{\det}=N^3G^2$ with each method's
+  \emph{measured} gain $G$, Swerling-1 closed forms (next page):
+  \begin{center}\scriptsize
+  \begin{tabular}{@{}lrrr@{}}
+    \toprule
+    method & sync gain & detect range & vs.\ perfect \\
+    \midrule
+    star: two-way / micro / hybrid & 99.7--99.9\% & 2896--2899\,m & 99.9--100\% \\
+    mesh: dhybrid directed & 99.8\% & 2897\,m & 99.9\% \\
+    mesh: dhybrid alternating & 95.8\% & 2839\,m & 97.9\% \\
+    mesh: dhybrid symmetric & 80.0\% & 2594\,m & 89.4\% \\
+    mesh: KF-DFPC & 56.7\% & 2185\,m & 75.3\% \\
+    mesh: DFPC & 46.2\% & 1972\,m & 68.0\% \\
+    free-running & 16.7\% & 1184\,m & 40.8\% \\
+    perfect sync (bound) & 100\% & 2900\,m & 100\% \\
+    \bottomrule
+  \end{tabular}
+  \end{center}
+  \takeaway{Every sync result converts directly into operational
+  range: the consensus-tax costs 245--305\,m; the published DFPC
+  gives up $\sim$930\,m; free-running loses the coherent prize
+  entirely.}
+\end{frame}
+
+\figpage{detrange_01.png}{Detection performance predicted from each method's measured synchronization quality. The curves show the probability of detecting the drone as a function of range, and the bars show the resulting detection range. The well-synchronized methods reach 2896 to 2899 meters of the 2900-meter perfect-synchronization bound, while the unsynchronized array reaches only 1184 meters.}
+
+\begin{frame}{The 3-D scene behind the waveform test (Sionna RT)}
+  \small The detection Monte Carlo does not use closed-form
+  propagation: station$\to$target legs are \textbf{ray-traced} in a
+  3-D scene (next two pages):
+  \begin{itemize}
+    \item Base-station masts at 15\,m, drone at 60\,m, dielectric
+      ground plane (medium-dry, $\varepsilon_r=15$) --- the two-ray
+      ground bounce that dominates low-altitude UHF is in every
+      measured $P_d$.
+    \item The drone itself is a \emph{point probe + analytic RCS}:
+      shooting-ray solvers physically cannot sample bounces off a
+      0.3\,m object at hundreds of meters (verified: 0 paths). This
+      RT-legs + analytic-RCS coupling is the standard ISAC approach.
+    \item Validation: RT in free space reproduces the analytic model
+      waypoint-for-waypoint to float32 precision.
+  \end{itemize}
+  \takeaway{First page: the deployment --- masts (blue), flight path
+  (orange), drone (red, enlarged for visibility). Second page: the
+  solver-traced rays --- line-of-sight plus one ground reflection
+  from every station converging on the drone.}
+\end{frame}
+
+\figpage{scene_overview.png}{The three-dimensional scene used for ray-traced propagation. The six base-station masts are shown in blue, the drone's 2.4-kilometer flight path in orange, and the drone itself in red, all above a dielectric ground plane. The drone and waypoint markers are drawn larger than life so they are visible at this scale.}
+
+\figpage{scene_rays.png}{The propagation paths found by the ray-tracing solver. A direct line-of-sight path and one ground reflection from every station converge on the drone. These paths, including the ground bounce, are what feed the detection simulation.}
+
+\begin{frame}{What each station actually illuminates}
+  \small Each station has a \textbf{single isotropic element} --- no
+  panel, no local beam. Its real ``radiation pattern'' at drone
+  altitude is propagation physics (next page):
+  \begin{itemize}
+    \item Concentric bright/dark rings around each mast: two-ray
+      interference between the direct ray and the ground bounce at
+      the 60\,m plane.
+    \item A drone crossing the rings sees per-station illumination
+      swing by tens of dB --- this is what the RT layer adds to the
+      measured $P_d$ and why free-space link budgets mislead at low
+      altitude.
+  \end{itemize}
+  \takeaway{The rings are ground-bounce lobing, NOT an antenna
+  pattern --- the array's directivity lives in the phase relations
+  \emph{between} stations, shown on the following two pages.}
+\end{frame}
+
+\figpage{radiation_per_station.png}{What each station actually illuminates at the drone's altitude of 60 meters. Each station has a single omnidirectional antenna, so the ring patterns are not antenna beams; they are interference between the direct ray and its reflection off the ground. A drone crossing these rings sees the illumination from each station swing by tens of decibels.}
+
+\begin{frame}{The array's ``beam'': a sub-meter focal spot}
+  \small Conjugate-phasing all six stations at one hypothesized cell
+  is \emph{near-field focusing}, not far-field beamforming. Next two
+  pages:
+  \begin{itemize}
+    \item \textbf{Wide map} (30\,m pixels): no beam shape at
+      deployment scale --- speckle brightening toward the array;
+      near-mast pixels exceed the focal level (spherical spreading
+      beats focusing up close; 0\,dB $\equiv$ power at the focus).
+    \item \textbf{Zoom} (2.5\,cm pixels): the actual focal spot ---
+      $\sim$25\,cm wide ($\lambda R/D$ at 33\,cm carrier over a
+      $\sim$1\,km aperture), 0\,dB at the focus, in a lattice of
+      quasi-lobes with median $-8.2$\,dB (the $1/N=-7.8$\,dB sparse-
+      array speckle floor).
+  \end{itemize}
+  \takeaway{Six elements buy a razor-thin focal gain surrounded by
+  high sidelobes --- exactly why the detection test is \emph{cued}
+  (one cell hypothesis at a time, steered computationally).}
+\end{frame}
+
+\figpage{array_pattern_wide.png}{The combined power of all six stations, phased to focus on the drone's position (marked with the red cross), computed over the entire deployment. At this scale there is no beam; the pattern is speckle. The zero-decibel reference is the power delivered at the focus, and the pixels near the masts exceed it simply because they are much closer to a transmitter.}
+
+\figpage{array_pattern_zoom.png}{A close-up of the focal region. The array concentrates its power into a spot roughly 25 centimeters wide, surrounded by sidelobe speckle whose median is 8.2 decibels below the focus, matching the one-over-N level expected for a six-element sparse array. This is why the detection test examines one hypothesized cell at a time.}
+
+\begin{frame}{Counted detections along a drone crossing}
+  \small The real test: no detection formulas anywhere in the loop.
+  Every station transmits a 5G-style OFDM burst pre-steered at the
+  hypothesized cell; echoes are synthesized sample-by-sample
+  (RT legs, Swerling-1 RCS, \emph{measured} sync residuals, real
+  noise), matched-filtered, coherently combined, compared to an
+  \textbf{empirical} threshold calibrated on target-absent trials.
+  1500 trials per waypoint; measured $P_{fa}$ = 1.00e-3 (target
+  0.001). Next page: the scene, $P_d$ along the path, and
+  waveform-measured combining loss:
+  \begin{center}\scriptsize
+  \begin{tabular}{@{}lrl@{}}
+    \toprule
+    method & combining loss & $P_d$ along path \\
+    \midrule
+    star: two-way & $-0.00$\,dB & 84 98 98 99 100 $\cdots$ 100 99 98 88\,\% \\
+    star: hybrid & $+0.01$\,dB & identical \\
+    perfect sync (bound) & $-0.00$\,dB & identical \\
+    mesh: alternating & $-0.33$\,dB & 81 96 98 99 100 $\cdots$ 99 98 88\,\% \\
+    mesh: symmetric & $-1.08$\,dB & 73 85 87 95 98 $\cdots$ 88 85 71\,\% \\
+    free-running & $-9.24$\,dB & 19 35 49 66 80 $\cdots$ 57 45 22\,\% \\
+    \bottomrule
+  \end{tabular}
+  \end{center}
+  \takeaway{The synced array is indistinguishable from perfect sync,
+  waypoint for waypoint, in counted detections.}
+\end{frame}
+
+\figpage{wavescene_01.png}{The waveform-level detection study. The map shows the deployment and the drone's path, colored by the measured probability of detection at each waypoint, with snapshots of the array refocusing as the drone moves. The lower panels give the detection probability along the path for each synchronization method, and the combining loss that each method's measured phase errors caused.}
+
+\begin{frame}{Field realism: clutter-limited detection}
+  \small The realism layer adds what bites in the field, all injected
+  into the raw sample streams (next page):
+  \begin{itemize}
+    \item Gamma-distributed ground clutter with internal motion ---
+      peak clutter-to-noise \textbf{70.1\,dB}: the problem is
+      clutter-limited, exactly like real UHF drone radar.
+    \item Direct-path self-interference at true delays, removed by
+      least-squares cancellation: \textbf{46.1\,dB $\to$ 6.6\,dB}
+      above noise.
+    \item Aspect-dependent body RCS + rotor-blade micro-Doppler; a
+      64-pulse CPI with range--Doppler processing; CA-CFAR with the
+      clutter ridge notched, calibrated on target-absent trials
+      \emph{containing} clutter.
+  \end{itemize}
+  \takeaway{Detection survives by \emph{Doppler separation} --- the
+  physically correct mechanism. Honest note: at this geometry even
+  the unsynced array detects ($\ge$97\%) inside $\sim$1\,km ---
+  sync earns its keep at the coverage edge, which is exactly where
+  the scheduling work aims it.}
+\end{frame}
+
+\figpage{realistic_01.png}{The clutter-limited detection study. The center panel shows a processed range--Doppler map: the bright ridge at zero Doppler is ground clutter, which the detector notches out, and the drone appears as the marked cell offset in Doppler by its motion. The bottom panel shows the counted detection probability along the path.}
+
+% =====================================================================
+\section{The frontier: synchronization as a scheduled resource}
+% =====================================================================
+
+\begin{frame}{Idea: stop polling, start scheduling}
+  \small Every published scheme polls every station at a fixed
+  cadence. But each link's Kalman filter already \emph{knows} its
+  posterior uncertainty --- so service a station only when its
+  predicted uncertainty approaches its coherence budget, and set
+  budgets by \emph{detection utility} (tight for stations that
+  matter at the coverage edge). Measured ($N{=}6$, next page):
+  \begin{center}\small
+    \begin{tabular}{@{}lrrr@{}}
+      \toprule
+      policy & airtime & array gain & edge $P_d$ \\
+      \midrule
+      uniform & 95.6\% & 99.4\% & 99.8\,/\,99.1\% \\
+      scheduled (flat budgets) & 38.2\% & 98.7\% & 99.8\,/\,99.1\% \\
+      scheduled (task-aware) & 44.0\% & 98.0\% & 99.8\,/\,99.1\% \\
+      \bottomrule
+    \end{tabular}
+  \end{center}
+  \takeaway{$\sim$55--60\% of the channel returned at \emph{identical
+  counted detection}. The figure shows the mechanism: sawtooth
+  coasting against per-station budgets; tick marks are the pilots
+  actually sent --- the whitespace between them is the dividend.}
+\end{frame}
+
+\figpage{smart_01.png}{Uncertainty-driven pilot scheduling. The top panel shows each station's residual sawing up and down between corrections, with tick marks at the pilots actually transmitted; stations are left to coast until their predicted uncertainty approaches their budget. The lower panels show the channel time used by each policy and the counted detection performance at the coverage edge, which is unchanged.}
+
+\begin{frame}{Under contention, scheduling decides who stays coherent}
+  \small Cap the channel below demand ($N{=}10$: 9 links want service,
+  only 2 exchanges/interval fit) and compare five policies ---
+  including a genie \emph{oracle} that ranks by the true residual no
+  online policy can see (next page):
+  \begin{center}\small
+    \begin{tabular}{@{}lrr@{}}
+      \toprule
+      policy & array gain & worst-station RMS \\
+      \midrule
+      uniform     & 10.5\% & (starved: never acquires) \\
+      round-robin & 84.8\% & 1103\,mrad \\
+      \textbf{scheduled (ours)} & \textbf{94.0\%} & 531\,mrad \\
+      genie oracle & 97.8\% & 218\,mrad \\
+      \bottomrule
+    \end{tabular}
+  \end{center}
+  \takeaway{Fixed cadence starves stations by construction; the
+  Kalman-threshold rule captures most of what perfect information
+  could buy. Honest negative result: a myopic Whittle-style index
+  \emph{underperforms} (64\%) --- it chases already-blown links
+  instead of protecting salvageable ones.}
+\end{frame}
+
+\figpage{contention_01.png}{Scheduling under contention, where nine links compete for a channel that can carry only a fraction of them each interval. The panels show array gain and edge detection as a function of channel capacity for each policy. The fixed uniform schedule permanently starves some stations and collapses, while the uncertainty-driven scheduler keeps the array coherent.}
+
+\begin{frame}{The wall, measurably moved}
+  \small Pin the channel at its physical limit (5 exchanges/interval)
+  and sweep $N$ (next page):
+  \begin{center}\small
+    \begin{tabular}{@{}lrrrr@{}}
+      \toprule
+      policy & $N{=}6$ & $N{=}8$ & $N{=}10$ & $N{=}12$ \\
+      \midrule
+      uniform & 99.4\% & 58.9\% & 27.0\% & 31.2\% \\
+      round-robin & 99.4\% & 99.1\% & 98.4\% & 98.6\% \\
+      scheduled & 98.6\% & 98.7\% & 98.2\% & 98.4\% \\
+      (scheduled airtime) & (38.6\%) & (52.0\%) & (65.0\%) & (77.3\%) \\
+      \bottomrule
+    \end{tabular}
+  \end{center}
+  \takeaway{$N_{\max}$ holding $\ge$90\% gain: uniform $= 6$ ---
+  exactly the $19.1\%\times(N{-}1)$ arithmetic --- and it collapses
+  beyond. Scheduled holds 98\% at $N{=}12$ using 77\% of the channel,
+  wall beyond the sweep: ``the airtime wall moves right'' is now a
+  measured curve, not a sentence.}
+\end{frame}
+
+\figpage{wall_01.png}{The array-size wall for each scheduling policy, with the channel fixed at its physical capacity. The uniform schedule holds until exactly six stations and then collapses. The uncertainty-driven scheduler holds 98 percent coherent gain through at least twelve stations while using 77 percent of the channel.}
+
+\begin{frame}{Closing the loop: budgets that follow the target}
+  \small A drone crosses the deployment; each track segment
+  re-targets the per-station budgets from the \emph{same ray-traced
+  legs the detector uses} --- tight budgets for the stations that
+  matter at the current target hypothesis, coast for the rest
+  (next page):
+  \begin{itemize}
+    \item \textbf{56\% of airtime returned} vs.\ uniform (95.6\%
+      $\to$ 42.2\%), gain 98.2\%.
+    \item Counted $P_d$ at every waypoint, from that segment's own
+      residuals: \textbf{matching} (99.5--100\% everywhere).
+    \item Sensing $\to$ sync allocation $\to$ sensing: the closed
+      ISAC loop, mechanically working.
+  \end{itemize}
+  \takeaway{At an uncontended operating point, tracking budgets tie
+  static ones --- the differentiating experiment (tracking budgets
+  \emph{+ capped channel}) is built and queued.}
+\end{frame}
+
+\figpage{sensloop_01.png}{Scheduling with budgets that follow the sensing target. As the drone crosses the deployment, each segment of its track re-assigns tight phase budgets to the stations that matter most for the current target position. The panels show the budgets stepping over time with the residuals beneath them, the counted detection at each waypoint, and the channel time used by each policy.}
+
+\begin{frame}{Two more dividends: hardware diversity and cheap pilots}
+  \begin{columns}[T]
+    \column{0.48\textwidth}
+    \begin{block}{\small Heterogeneous fleets (OCXO + TCXO mix)}
+      \small The scheduler reads each link's posterior: OCXO stations
+      serviced 12\% of intervals, TCXO stations 55\% --- 97.5\% gain
+      at 36\% airtime. The dividend \emph{grows} with fleet spread,
+      exactly as the coasting-time rule predicts.
+    \end{block}
+    \begin{block}{\small Motion stress (candidate new physics term)}
+      \small Scheduled coasting degrades with channel Doppler
+      (145$\to$227\,mrad at 3\,m/s) while uniform holds --- the coast
+      rule is missing a \emph{channel-decorrelation} term. Same
+      discovery shape as the latency term.
+    \end{block}
+    \column{0.48\textwidth}
+    \begin{block}{\small Multi-fidelity servicing}
+      \small Posterior-driven choice per service: full two-way frame,
+      or --- once frequency is well-known --- a 287-sample phase-only
+      micro-pilot at its true sample cost:
+      \begin{center}
+        airtime $57.4\%\ \to\ 10.4\%$
+      \end{center}
+      at unchanged gain (162 of 180 services went micro).
+    \end{block}
+    \begin{block}{\small Engineering guarantee}
+      \small All extensions opt-in; defaults reproduce the original
+      scheduler \emph{bit-for-bit} (regression-locked); 41 tests.
+    \end{block}
+  \end{columns}
+\end{frame}
+
+% =====================================================================
+\section{Novelty, future directions, and honest limits}
+% =====================================================================
+
+\begin{frame}{Where the novelty actually is}
+  \small
+  \begin{enumerate}
+    \item \textbf{Latency-coupled error floor} (confirmed unpublished
+      through Dec 2025): the $(\sigma_{\omega^+}LT)^2$ term ---
+      actuation latency as a design parameter distinct from cadence.
+      Kill risk to clear: classical delayed-PLL/ADPLL literature.
+    \item \textbf{Sync airtime as an allocated resource} (built +
+      measured here): uncertainty-driven, task-aware pilot
+      scheduling, validated by counted detection through contention
+      and the wall. Kill risk to clear: Age-of-Information /
+      remote-estimation scheduling --- must be framed as the
+      intersection (physical pilots, coherence budgets, detection
+      utility).
+    \item \textbf{What statistics-level validation hid}: anti-phase
+      capture of published DFPC over a real channel; the consensus
+      tax as an update-schedule artifact (74\%$\to$99.9\% by taking
+      turns). Bridging results, not standalone papers.
+  \end{enumerate}
+  \takeaway{The detection layer itself is supporting material
+  (established field since $\sim$2009) --- its role is converting
+  milliradians into meters and $P_d$.}
+\end{frame}
+
+\begin{frame}{Next steps}
+  \begin{columns}[T]
+    \column{0.48\textwidth}
+    \begin{block}{\small On the runway}
+      \small
+      \begin{itemize}
+        \item Error-floor letter (IEEE WCL/LMWT class)
+        \item Scheduling paper: run tracking budgets \emph{under
+          contention}; AoI prior-art pass first
+        \item \textbf{Posterior-gated membership}: a station past
+          $\sim$90$^\circ$ \emph{subtracts} from the beam --- bench it
+          until re-synced; soft weight
+          $E[e^{j\theta}]=e^{-\sigma^2/2}$ from the filter. Joint
+          airtime + membership scheduling appears unclaimed.
+        \item Derive the Doppler coast-decorrelation term
+        \item Two-SDR hardware point to anchor the simulation
+      \end{itemize}
+    \end{block}
+    \column{0.48\textwidth}
+    \begin{block}{\small Long-range (speculative, high ceiling)}
+      \small
+      \begin{itemize}
+        \item \emph{Coherence capacity}: the minimum channel resource
+          any protocol needs to hold $N$ oscillators within budget
+          --- a law, connecting to the thermodynamic cost of
+          timekeeping
+        \item Synchronization phase transitions over real multipath
+          at large $N$ (statistical mechanics of engineered sync)
+        \item Infrastructure-as-instrument: a cellular grid as one
+          coherent aperture (hardware program)
+      \end{itemize}
+    \end{block}
+  \end{columns}
+\end{frame}
+
+\begin{frame}{Honest limitations}
+  \small
+  \begin{itemize}
+    \item \textbf{Simulation only} --- no hardware validation anywhere
+      in the stack.
+    \item Statistical TDL channel (RT layer adds ground bounce +
+      simple boxes, no terrain); flicker FM is an AR(1) surrogate;
+      AGC instantaneous; two-way side channel error-free.
+    \item $N$-station stars simulate links independently (reference
+      noise per-link $\Rightarrow$ reported gains slightly
+      conservative); broadcast amortization overstates star airtime.
+    \item Detection: cued single gate, no tracker, no discrete
+      clutter, PA not applied to the sensing burst; sparse-array
+      speckle $\sim 1/N$ is why detection is cued.
+    \item Hybrid's one-way frequency observation biased by LOS
+      Doppler (4th state planned).
+  \end{itemize}
+  \takeaway{Every limitation above is documented in the repository
+  next to the code it applies to --- the claims are scoped to what
+  was actually simulated.}
+\end{frame}
+
+\begin{frame}[fragile]{Reproduce everything}
+  \scriptsize Every figure in this deck regenerates from the
+  repository (\texttt{.venv/bin/python}, seed 0):
+\begin{verbatim}
+python -m pytest                                 # 41 tests, ~10 s
+python simulation.py --plot-story                # the problem + the loop
+python simulation.py --plot-iq                   # what a pilot is
+python simulation.py --model twoway --plot       # crystal alignment
+python simulation.py --model compare --plot      # all methods head-to-head
+python simulation.py --model twoway --stations 6 --plot     # deployment
+python simulation.py --model hybrid --sweep-stations --plot # the wall
+python simulation.py --model twoway --sweep-interval --plot # cadence
+python scalability_sweep.py                      # the full 2-D grid
+python detection_study.py                        # ranges (analytic)
+python waveform_detection_study.py               # counted Pd (RT)
+python realistic_detection_study.py              # clutter-limited
+python smart_sync_study.py                       # scheduling
+python contention_study.py                       # contended channel
+python airtime_wall_study.py                     # the wall, moved
+python sensing_loop_study.py                     # budgets follow target
+python render_scene.py ; python radiation_maps.py  # 3-D scene + patterns
+\end{verbatim}
+  \begin{center}
+    \small Docs: \texttt{HOW\_TO\_RUN.txt} $\cdot$
+    \texttt{METHOD\_CALCULATIONS.md} $\cdot$
+    \texttt{CODE\_REFERENCE.md} $\cdot$ \texttt{PUBLISHABLE.md} $\cdot$
+    \texttt{RESEARCH\_IDEAS.md}
+  \end{center}
+\end{frame}
+
+% =====================================================================
+\appendix
+\section*{Backup}
+% =====================================================================
+
+\begin{frame}{Backup: extra material}
+  \small Two more full-page figures follow:
+  \begin{itemize}
+    \item \textbf{Receiver diagnostics} --- the six-panel debugging
+      view behind every scoreboard number: detection confidence,
+      coarse/fine CFO acquisition, sample timing, and the phase
+      decomposition.
+    \item \textbf{The toy baseline} --- the original tone-plus-noise
+      model (no channel, no impairments; phase RMSE 1.6\,mrad): what
+      sync research looks like \emph{before} the physical layer is
+      allowed to object, kept only for comparison.
+  \end{itemize}
+\end{frame}
+
+\figpage{diagnostics_01.png}{The receiver's diagnostic view for a one-way run: detection confidence, coarse and fine carrier-frequency acquisition, sample-timing alignment, and the decomposition of the measured phase into its oscillator and channel components.}
+
+\figpage{ideal_01.png}{The original idealized model, with no channel and no hardware impairments, kept only for comparison. It achieves a residual of 1.6 milliradians. The difference between this and the 70 milliradians of the realistic loop is the price of the physical layer.}
+
+\begin{frame}{Summary}
+  \begin{enumerate}
+    \item \textbf{Problem:} distributed radios only combine coherently
+      if their crystals agree to $\sim$18$^\circ$ at 915\,MHz ---
+      worth $N^3$ in detection SNR, $\sim$1.7\,km of range at $N=6$.
+    \item \textbf{Method:} an impairment-complete, waveform-level,
+      oracle-graded testbed; six sync methods on one scoreboard.
+    \item \textbf{Results:} two-way/hybrid/micro hold 28--84\,mrad
+      (99.8--100\% gain); the closed-loop floor decomposes with a
+      previously unpublished latency term (sees 12, holds 70);
+      published consensus fails over a real channel in ways
+      statistics-level validation could not see.
+    \item \textbf{Frontier:} synchronization as a \emph{scheduled
+      resource} --- half the channel returned at identical counted
+      detection, the airtime wall measurably moved, and a closed
+      sensing$\to$sync loop running.
+    \end{enumerate}
+  \begin{center}
+    \textbf{Thank you} --- deck + code + docs are one repository;
+    every number regenerates with one command.
+  \end{center}
+\end{frame}
+
+\end{document}
