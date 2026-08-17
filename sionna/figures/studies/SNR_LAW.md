@@ -157,12 +157,54 @@ channel-dependent (delay spread / Rice factor) and enters r additively
 — on richer channels the flat region starts even lower. The cliff
 location depends on the detector, not the tracking math, so it is
 measured (here: between 5 and 10 dB for the sync preamble at these
-settings), not derived. The pilot-shortening lever is analytic and
-consistent with the micro-pilot measurements, but a dedicated
-L-vs-SNR sweep at fixed SNR·L has not been run — it is the one
-missing experiment if the PI wants the lever curve measured rather
-than derived.
+settings), not derived. The pilot-shortening lever has now been measured
+(`pilot_lever_check.py`; Section 6 below).
 
-*Script: `snr_law_check.py` (in the `sionna/` directory). Formulas as
-implemented in `coast_law.py` and `ota_sync/`. Simulation-validated
-only.*
+## 6. The lever, measured (2026-08-16)
+
+Sweep (`pilot_lever_check.py`): pilot halved for every 3 dB of SNR at
+fixed SNR·length product (anchor 20 dB × 2047 samples), plus a control
+at fixed 20 dB with the same lengths. Two stations, serviced every
+interval, seeds 0–2.
+
+| SNR (dB) | pilot length | residual (mrad) | sync airtime |
+|---|---|---|---|
+| 14 | 8191 | 437 ± 252 | 68.3% |
+| 17 | 4095 | 95 ± 11 | 35.5% |
+| 20 | 2047 | 113 ± 4 | 19.1% |
+| 23 | 1023 | 110 ± 9 | 10.9% |
+| 26 | 511 | 122 ± 17 | 6.8% |
+| 29 | 255 | 133 ± 25 | 4.3% |
+| 32 | 127 | 123 ± 11 | 3.0% |
+
+Control at fixed 20 dB: residuals statistically identical at every
+length (95–138 mrad), same airtimes.
+
+Three findings, one stronger than the original claim:
+
+1. **The lever works: airtime 19.1% → 3.0% (6.4×) at unchanged
+   residual.** But it does not fall a full 16× — capture length
+   includes the cyclic prefix and guard time, which become the
+   overhead floor once the pilot is short.
+2. **At operating SNR the lever is free — no SNR trade needed.** The
+   fixed-20 dB control shortens the pilot 16× with no residual
+   penalty, exactly what the flat-middle theory predicts: even
+   20 dB × 127 samples leaves thermal phase noise at ~3 mrad,
+   negligible against the resampling floor. SNR's real role is
+   maintaining *detection margin* as the pilot shrinks, not
+   estimation accuracy.
+3. **Very long pilots actively hurt.** The 8191-sample rows are worse
+   at both SNRs (437 ± 252 at 14 dB; 116 ± 45 at 20 dB): a longer
+   capture accumulates more oscillator walk *within the frame* — the
+   same mechanism that made the short OFDM sensing burst beat the
+   long dedicated preamble. There is an interior-optimal pilot
+   length, and the default 2047 is already past it on the long side.
+
+Bottom line for the PI: the default configuration over-spends on
+pilot length by roughly 6× at these SNRs; shortening the pilot is the
+cheapest airtime win in the whole system and composes with scheduling
+and piggybacking.
+
+*Scripts: `snr_law_check.py`, `pilot_lever_check.py` (in the `sionna/`
+directory). Formulas as implemented in `coast_law.py` and `ota_sync/`.
+Simulation-validated only.*
