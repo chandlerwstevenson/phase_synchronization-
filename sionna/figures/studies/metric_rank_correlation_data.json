@@ -1,0 +1,8 @@
+{
+ "net throughput (after sync cost)": -0.234,
+ "mean throughput, physical link": 0.485,
+ "mean throughput, edge user": 0.543,
+ "mean throughput, nearby user": 0.544,
+ "detection range": 0.568,
+ "guaranteed (95%) throughput, edge": 0.63
+}

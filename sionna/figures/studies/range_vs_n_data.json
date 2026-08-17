@@ -1,0 +1,114 @@
+[
+ {
+  "n": 6,
+  "policy": "uniform",
+  "capacity": 1,
+  "gain": 0.29410892378380865,
+  "range_m": 1305.3105881329077
+ },
+ {
+  "n": 6,
+  "policy": "roundrobin",
+  "capacity": 1,
+  "gain": 0.8703612318218005,
+  "range_m": 2245.481746001515
+ },
+ {
+  "n": 6,
+  "policy": "scheduled",
+  "capacity": 1,
+  "gain": 0.8730996460189503,
+  "range_m": 2249.0114471024513
+ },
+ {
+  "n": 6,
+  "policy": "oracle",
+  "capacity": 1,
+  "gain": 0.9225838040907696,
+  "range_m": 2311.866080099087
+ },
+ {
+  "n": 10,
+  "policy": "uniform",
+  "capacity": 2,
+  "gain": 0.2064454351965499,
+  "range_m": 1604.1647329844795
+ },
+ {
+  "n": 10,
+  "policy": "roundrobin",
+  "capacity": 2,
+  "gain": 0.8544221397827186,
+  "range_m": 3263.492122358412
+ },
+ {
+  "n": 10,
+  "policy": "scheduled",
+  "capacity": 2,
+  "gain": 0.9169261031328988,
+  "range_m": 3380.753375213515
+ },
+ {
+  "n": 10,
+  "policy": "oracle",
+  "capacity": 2,
+  "gain": 0.9730379283820961,
+  "range_m": 3482.661032547514
+ },
+ {
+  "n": 14,
+  "policy": "uniform",
+  "capacity": 3,
+  "gain": 0.0996862738384962,
+  "range_m": 1434.6964716865216
+ },
+ {
+  "n": 14,
+  "policy": "roundrobin",
+  "capacity": 3,
+  "gain": 0.9059926518942211,
+  "range_m": 4325.184983339926
+ },
+ {
+  "n": 14,
+  "policy": "scheduled",
+  "capacity": 3,
+  "gain": 0.9488780546994352,
+  "range_m": 4426.3683320161945
+ },
+ {
+  "n": 14,
+  "policy": "oracle",
+  "capacity": 3,
+  "gain": 0.9735735296965649,
+  "range_m": 4483.598627469096
+ },
+ {
+  "n": 20,
+  "policy": "uniform",
+  "capacity": 4,
+  "gain": 0.08257724999788602,
+  "range_m": 1706.2749964823927
+ },
+ {
+  "n": 20,
+  "policy": "roundrobin",
+  "capacity": 4,
+  "gain": 0.8959614885187864,
+  "range_m": 5620.351664049999
+ },
+ {
+  "n": 20,
+  "policy": "scheduled",
+  "capacity": 4,
+  "gain": 0.8603272735550899,
+  "range_m": 5507.4512832677765
+ },
+ {
+  "n": 20,
+  "policy": "oracle",
+  "capacity": 4,
+  "gain": 0.9548340926683961,
+  "range_m": 5802.067506062579
+ }
+]

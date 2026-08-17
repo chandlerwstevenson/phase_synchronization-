@@ -1,0 +1,50 @@
+[
+ {
+  "n": 6,
+  "policy": "scheduled",
+  "airtime": 0.38248,
+  "uniform_demand": 0.9561999999999999
+ },
+ {
+  "n": 6,
+  "policy": "oracle",
+  "airtime": 0.2804853333333333,
+  "uniform_demand": 0.9561999999999999
+ },
+ {
+  "n": 10,
+  "policy": "scheduled",
+  "airtime": 0.6884640000000001,
+  "uniform_demand": 1.72116
+ },
+ {
+  "n": 10,
+  "policy": "oracle",
+  "airtime": 0.5237851111111111,
+  "uniform_demand": 1.72116
+ },
+ {
+  "n": 14,
+  "policy": "scheduled",
+  "airtime": 0.9944479999999999,
+  "uniform_demand": 2.48612
+ },
+ {
+  "n": 14,
+  "policy": "oracle",
+  "airtime": 0.7862088888888888,
+  "uniform_demand": 2.48612
+ },
+ {
+  "n": 20,
+  "policy": "scheduled",
+  "airtime": 1.4544864444444443,
+  "uniform_demand": 3.6335599999999997
+ },
+ {
+  "n": 20,
+  "policy": "oracle",
+  "airtime": 1.1293784444444446,
+  "uniform_demand": 3.6335599999999997
+ }
+]

@@ -1,0 +1,42 @@
+{
+ "round1": [
+  1,
+  10
+ ],
+ "round2": [
+  22,
+  32
+ ],
+ "round2_categories": {
+  "class": [
+   9,
+   12
+  ],
+  "plateau": [
+   8,
+   12
+  ],
+  "knee": [
+   5,
+   8
+  ]
+ },
+ "nextension": [
+  20,
+  24
+ ],
+ "nextension_categories": {
+  "class": [
+   8,
+   8
+  ],
+  "plateau": [
+   8,
+   8
+  ],
+  "knee": [
+   4,
+   8
+  ]
+ }
+}

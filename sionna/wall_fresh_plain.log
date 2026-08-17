@@ -1,0 +1,92 @@
+====================================================================
+EX-ANTE PREDICTIONS (fixed before any measurement below)
+demand priced at trigger = 0.5 x 0.314 rad = 0.1570 rad
+====================================================================
+
+P1  critical capacity, N=10 scheduled:
+  all-sdr   demand C* = 9.00 exchanges/interval (seeds: 9.00, 9.00, 9.00) -> predicted knee capacity 9
+  all-tcxo  demand C* = 4.50 exchanges/interval (seeds: 4.50, 4.50, 4.50) -> predicted knee capacity 5
+  mixed     demand C* = 7.00 exchanges/interval (seeds: 7.00, 7.00, 7.00) -> predicted knee capacity 7
+
+P2  wall shift at capacity 3, sdr fleet:
+  predicted N*_uniform = 4  (uniform demands N-1)
+  scheduled demand: N=4:3.00, N=6:5.00, N=8:7.00, N=10:9.00, N=12:11.00, N=14:13.00, N=16:15.00
+  predicted N*_scheduled = 4  (largest swept N with demand <= capacity)
+  predicted wall-shift ratio = 1.00
+
+P3  heterogeneous dividend, N=10 (reference ocxo, k tcxo slaves):
+  k=0  demand D = 0.24 -> predicted knee capacity 1
+  k=2  demand D = 1.18 -> predicted knee capacity 2
+  k=5  demand D = 2.61 -> predicted knee capacity 3
+  k=7  demand D = 3.55 -> predicted knee capacity 4
+  k=9  demand D = 4.50 -> predicted knee capacity 5
+
+--- P1 measurements (scheduled, N=10, 3-seed mean gain) ---
+  all-sdr   predicted 9  measured knee None  ->  MISS (no capacity in window reached 90%)
+            cap7: 38.8%  cap8: 40.7%  cap9: 45.5%
+  all-tcxo  predicted 5  measured knee 3  ->  MISS (knee 3, C*=4.50, error -1.50 exchanges/interval)
+            cap2: 85.1%  cap3: 92.5%  cap4: 95.5%  cap5: 95.3%  cap6: 95.8%  cap7: 95.9%
+  mixed     predicted 7  measured knee None  ->  MISS (no capacity in window reached 90%)
+            cap5: 49.2%  cap6: 51.5%  cap7: 58.4%  cap8: 63.0%  cap9: 60.4%
+====================================================================
+EX-ANTE PREDICTIONS (fixed before any measurement below)
+demand priced at trigger = 0.5 x 0.314 rad = 0.1570 rad
+====================================================================
+
+P1  critical capacity, N=10 scheduled:
+  all-sdr   demand C* = 9.00 exchanges/interval (seeds: 9.00, 9.00, 9.00) -> predicted knee capacity 9
+  all-tcxo  demand C* = 4.50 exchanges/interval (seeds: 4.50, 4.50, 4.50) -> predicted knee capacity 5
+  mixed     demand C* = 7.00 exchanges/interval (seeds: 7.00, 7.00, 7.00) -> predicted knee capacity 7
+
+P2  wall shift at capacity 3, sdr fleet:
+  predicted N*_uniform = 4  (uniform demands N-1)
+  scheduled demand: N=4:3.00, N=6:5.00, N=8:7.00, N=10:9.00, N=12:11.00, N=14:13.00, N=16:15.00
+  predicted N*_scheduled = 4  (largest swept N with demand <= capacity)
+  predicted wall-shift ratio = 1.00
+
+P3  heterogeneous dividend, N=10 (reference ocxo, k tcxo slaves):
+  k=0  demand D = 0.24 -> predicted knee capacity 1
+  k=2  demand D = 1.18 -> predicted knee capacity 2
+  k=5  demand D = 2.61 -> predicted knee capacity 3
+  k=7  demand D = 3.55 -> predicted knee capacity 4
+  k=9  demand D = 4.50 -> predicted knee capacity 5
+
+--- P2 measurements (capacity 3, sdr fleet, 3-seed mean gain) ---
+  uniform    N=4: 61.9%  N=6: 36.2%  N=8: 20.1%  N=10: 17.1%  N=12: 12.6%  N=14: 11.3%  N=16:  7.3%
+  scheduled  N=4: 62.4%  N=6: 45.6%  N=8: 42.3%  N=10: 38.6%  N=12: 35.6%  N=14: 35.8%  N=16: 34.8%
+  uniform    predicted N* = 4, measured N* = None  ->  MISS (no sustainable N found)
+  scheduled  predicted N* = 4, measured N* = None  ->  MISS (no sustainable N found)
+====================================================================
+EX-ANTE PREDICTIONS (fixed before any measurement below)
+demand priced at trigger = 0.5 x 0.314 rad = 0.1570 rad
+====================================================================
+
+P1  critical capacity, N=10 scheduled:
+  all-sdr   demand C* = 9.00 exchanges/interval (seeds: 9.00, 9.00, 9.00) -> predicted knee capacity 9
+  all-tcxo  demand C* = 4.50 exchanges/interval (seeds: 4.50, 4.50, 4.50) -> predicted knee capacity 5
+  mixed     demand C* = 7.00 exchanges/interval (seeds: 7.00, 7.00, 7.00) -> predicted knee capacity 7
+
+P2  wall shift at capacity 3, sdr fleet:
+  predicted N*_uniform = 4  (uniform demands N-1)
+  scheduled demand: N=4:3.00, N=6:5.00, N=8:7.00, N=10:9.00, N=12:11.00, N=14:13.00, N=16:15.00
+  predicted N*_scheduled = 4  (largest swept N with demand <= capacity)
+  predicted wall-shift ratio = 1.00
+
+P3  heterogeneous dividend, N=10 (reference ocxo, k tcxo slaves):
+  k=0  demand D = 0.24 -> predicted knee capacity 1
+  k=2  demand D = 1.18 -> predicted knee capacity 2
+  k=5  demand D = 2.61 -> predicted knee capacity 3
+  k=7  demand D = 3.55 -> predicted knee capacity 4
+  k=9  demand D = 4.50 -> predicted knee capacity 5
+
+--- P3 measurements (scheduled, N=10, 3-seed mean gain) ---
+  k=0  predicted 1  measured knee 1  ->  HIT (D=0.24 in (0,1])
+        cap1: 97.6%  cap2: 98.5%  cap3: 98.7%
+  k=2  predicted 2  measured knee 1  ->  MISS (knee 1, D=1.18, error -0.18)
+        cap1: 94.3%  cap2: 95.5%  cap3: 94.8%  cap4: 96.7%
+  k=5  predicted 3  measured knee 2  ->  MISS (knee 2, D=2.61, error -0.61)
+        cap1: 76.1%  cap2: 91.1%  cap3: 92.5%  cap4: 88.3%  cap5: 92.7%
+  k=7  predicted 4  measured knee 3  ->  MISS (knee 3, D=3.55, error -0.55)
+        cap2: 88.3%  cap3: 91.8%  cap4: 88.8%  cap5: 88.6%  cap6: 94.6%
+  k=9  predicted 5  measured knee 2  ->  MISS (knee 2, D=4.50, error -2.50)
+        cap1: 60.3%  cap2: 91.5%  cap3: 93.4%  cap4: 95.6%  cap5: 95.4%  cap6: 95.9%  cap7: 96.1%
