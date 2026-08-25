@@ -32,6 +32,11 @@ the channel at N=2 and stops fitting entirely near N≈6 (naive).
 - Steady residual decomposes into drift + latency + tracking
 - Latency term: corrections arrive L intervals late, so the
   frequency-estimate error integrates over the horizon
+- [CORRECTED 2026-08-24: the fourth term below is real in magnitude
+  but is unmodeled *oscillator* noise, not multipath resampling —
+  jitter over frozen multipath measures < 0.05 mrad; a genuine
+  clock-offset-driven fractional-resampling term exists at 10–25 mrad.
+  See WEEKLY_UPDATE.md's correction notice.]
 - Verified by ablation; a fourth term (multipath resampling,
   ~153 mrad/capture, SNR-independent) found by measurement
 

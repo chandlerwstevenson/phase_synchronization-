@@ -1,0 +1,69 @@
+PART 1 - mechanism check: frozen oscillators, integer-sample jitter over frozen multipath (seeds 0-1 pooled, error vs truth)
+ channel  jitter  error std (mrad)
+       E       0              0.24
+       E      32              0.25
+       D       0              0.23
+       D      32              0.27
+       A       0              0.25
+       A      32              0.27
+
+PART 1b - what does produce capture-level noise: intra-capture LO walk on/off x channel x jitter (tcxo walk, seeds 0-1)
+  (tcxo per-sample LO walk std = 574.9 urad)
+                                      config  error std (mrad)
+                   walk ON, TDL-D, jitter 32             29.93
+                    walk ON, TDL-D, jitter 0             33.56
+    walk ON, ~no multipath (1 ns), jitter 32             29.95
+                  walk OFF, TDL-D, jitter 32              0.26
+
+PART 3 - loop-level excess, inferred per corner cell (N=2 serviced-every-interval, 60 intervals, seeds 0-2)
+                cell  measured pred(no excess)  inferred excess std
+  ocxo/J32/S20/D        22.5            13.3                 27.7
+  tcxo/J32/S20/D       202.8           153.3                127.3
+   sdr/J32/S20/D       954.8           726.3                637.4
+  tcxo/J2 /S20/D       210.2           153.3                141.0
+  tcxo/J8 /S20/D       184.2           153.3                 91.9
+  tcxo/J32/S20/E       202.3           153.3                126.3
+  tcxo/J32/S20/A       203.1           153.3                127.9
+  tcxo/J32/S10/D       202.7           153.4                126.9
+  tcxo/J32/S30/D       202.7           153.3                127.1
+  ocxo/J2 /S30/E        26.0            13.3                 38.1
+   sdr/J32/S10/A       989.8           726.3                708.7
+  ocxo/J8 /S20/D        22.4            13.3                 27.2
+
+PART 2 - dominance map (81 cells, ex-ante drift/thermal + excess interpolated from the corner contrasts)
+ class  chan  J2/S10  J2/S20  J2/S30  J8/S10  J8/S20  J8/S30  J32/S10  J32/S20  J32/S30
+  ocxo     E   X 4.4x   X 4.4x   X 4.4x   X 2.2x   X 2.2x   X 4.4x   X 2.3x   X 2.3x   X 2.3x
+  ocxo     D   X60.1x   X60.1x   X 4.4x   X 2.2x   X 2.2x   X 2.2x   X 2.3x   X 2.3x   X 2.3x
+  ocxo     A   X60.1x   X60.1x   X 4.4x   X 2.2x   X 2.2x   X 2.2x   X99.0x   X 2.3x   X 2.3x
+  tcxo     E   D 1.7x   D 1.7x   D22.7x   D 3.9x   D 3.9x   D 3.9x   D 2.1x   D 2.1x   D 2.1x
+  tcxo     D   D 1.7x   D 1.7x   D 1.7x   D 3.9x   D 3.9x   D 3.9x   D 2.1x   D 2.0x   D 2.0x
+  tcxo     A   D 1.7x   D 1.7x   D 1.7x   D 3.9x   D 3.9x   D 3.9x   D 2.0x   D 2.0x   D 2.0x
+   sdr     E   D41.6x   D41.6x   D99.0x   D97.9x   D97.9x   D97.9x   D 1.6x   D 2.0x   D 2.0x
+   sdr     D   D41.6x   D41.6x   D41.6x   D97.9x   D97.9x   D97.9x   D 2.0x   D 2.0x   D 2.0x
+   sdr     A   D41.6x   D41.6x   D99.0x   D 1.6x   D97.9x   D97.9x   D 1.6x   D 2.0x   D 2.0x
+  drift std ocxo:   18.2 mrad/interval
+  drift std tcxo:  181.8 mrad/interval
+  drift std sdr:  909.0 mrad/interval
+
+PART 4 - overconfidence signature sqrt(b^2+e)/b across budgets at three corners, using each corner's inferred e (out-of-sample: e inferred from uniform-service runs, tested on scheduled-coasting runs)
+  corner tcxo/J32/D: inferred excess std 127 mrad
+     budget  meas ratio  pred ratio
+      0.150        1.32        1.31
+      0.200        1.38        1.19
+      0.314        1.19        1.08
+      0.450        0.91        1.04
+      0.600        1.11        1.02
+  corner tcxo/J32/E: inferred excess std 126 mrad
+     budget  meas ratio  pred ratio
+      0.150        1.31        1.31
+      0.200        1.38        1.18
+      0.314        1.19        1.08
+      0.450        0.91        1.04
+      0.600        1.11        1.02
+  corner tcxo/J2/D: inferred excess std 141 mrad
+     budget  meas ratio  pred ratio
+      0.150        1.27        1.37
+      0.200        1.31        1.22
+      0.314        1.18        1.10
+      0.450        1.03        1.05
+      0.600        1.13        1.03

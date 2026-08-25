@@ -1,0 +1,13 @@
+{
+  "multipath": ["multipath", "delay spread", "frequency-selective", "NLOS propagation", "scattering channel"],
+  "timing-jitter": ["timing jitter", "sampling offset", "sample timing error", "epoch jitter", "timing offset"],
+  "resampling-noise": ["resampling noise", "multipath error", "capture-to-capture variation", "measurement-induced phase noise", "pilot-induced noise"],
+  "two-way-sync": ["two-way synchronization", "two-way time transfer", "bidirectional synchronization", "round-trip phase", "reciprocal calibration"],
+  "carrier-phase": ["carrier phase", "phase synchronization", "phase alignment", "phase coherence", "oscillator phase"],
+  "distributed-array": ["distributed array", "distributed beamforming", "distributed MIMO", "cell-free massive MIMO", "coherent distributed", "distributed antenna"],
+  "error-floor": ["error floor", "error budget", "residual phase error", "phase error variance", "synchronization accuracy limit"],
+  "false-lock": ["false lock", "anti-phase", "phase ambiguity", "cycle slip", "hang-up phenomenon", "wrong lock point"],
+  "consensus-sync": ["consensus synchronization", "distributed consensus phase", "gossip synchronization", "decentralized synchronization", "mutual synchronization"],
+  "pll": ["phase-locked loop", "PLL", "Costas loop", "carrier tracking loop", "phase tracking loop"],
+  "gnss-multipath": ["GNSS multipath", "GPS carrier phase multipath", "code multipath error", "carrier multipath bias", "pseudorange multipath"]
+}

@@ -1,0 +1,1262 @@
+{
+ "n1_K10_s0_sdr-default": {
+  "rms_mrad": 105.5334764385069,
+  "bias_mrad": 12.929781820147578,
+  "wander_mrad": 104.7343418385106,
+  "detection": 0.9833333333333333
+ },
+ "n1_K10_s1_sdr-default": {
+  "rms_mrad": 222.49693692738808,
+  "bias_mrad": 59.8821176604767,
+  "wander_mrad": 214.90549371090304,
+  "detection": 0.9833333333333333
+ },
+ "n1_K10_s2_sdr-default": {
+  "rms_mrad": 78.8229348890559,
+  "bias_mrad": 2.305524123220274,
+  "wander_mrad": 78.81086269166583,
+  "detection": 0.9833333333333333
+ },
+ "n2_K10_s0_sdr-default": {
+  "rms_mrad": 71.87909096323416,
+  "bias_mrad": 5.391122177353963,
+  "wander_mrad": 71.6815409405067,
+  "detection": 0.9833333333333333
+ },
+ "n2_K10_s1_sdr-default": {
+  "rms_mrad": 138.31679075523334,
+  "bias_mrad": 40.05033983293875,
+  "wander_mrad": 132.45840789320732,
+  "detection": 0.9833333333333333
+ },
+ "n2_K10_s2_sdr-default": {
+  "rms_mrad": 72.42430451884461,
+  "bias_mrad": 7.897814135565397,
+  "wander_mrad": 71.99721207770222,
+  "detection": 0.9833333333333333
+ },
+ "n3_K10_s0_sdr-default": {
+  "rms_mrad": 69.22644652969474,
+  "bias_mrad": 16.467631195423692,
+  "wander_mrad": 67.25031774981741,
+  "detection": 0.9833333333333333
+ },
+ "n3_K10_s1_sdr-default": {
+  "rms_mrad": 106.45498953772373,
+  "bias_mrad": 30.336811045623445,
+  "wander_mrad": 102.04373661101506,
+  "detection": 0.9833333333333333
+ },
+ "n3_K10_s2_sdr-default": {
+  "rms_mrad": 53.899111979334094,
+  "bias_mrad": 7.574155690962413,
+  "wander_mrad": 53.35312648642324,
+  "detection": 0.9833333333333333
+ },
+ "n5_K10_s0_sdr-default": {
+  "rms_mrad": 51.47207335897168,
+  "bias_mrad": 7.5685053107529745,
+  "wander_mrad": 50.914667333579644,
+  "detection": 0.9833333333333333
+ },
+ "n5_K10_s1_sdr-default": {
+  "rms_mrad": 96.22373046558975,
+  "bias_mrad": 38.79855603081311,
+  "wander_mrad": 88.05317250174193,
+  "detection": 0.9833333333333333
+ },
+ "n5_K10_s2_sdr-default": {
+  "rms_mrad": 43.937077865975944,
+  "bias_mrad": 3.3617222628177106,
+  "wander_mrad": 43.807755635709256,
+  "detection": 0.9833333333333333
+ },
+ "n8_K10_s0_sdr-default": {
+  "rms_mrad": 40.324335886523926,
+  "bias_mrad": 5.264518868653132,
+  "wander_mrad": 39.98017742770572,
+  "detection": 0.9833333333333333
+ },
+ "n8_K10_s1_sdr-default": {
+  "rms_mrad": 83.86961209565553,
+  "bias_mrad": 40.78247042869029,
+  "wander_mrad": 73.30585539388123,
+  "detection": 0.9833333333333333
+ },
+ "n8_K10_s2_sdr-default": {
+  "rms_mrad": 35.312049764013835,
+  "bias_mrad": 0.2352694296689799,
+  "wander_mrad": 35.31125924362309,
+  "detection": 0.9833333333333333
+ },
+ "n12_K10_s0_sdr-default": {
+  "rms_mrad": 33.40394639382937,
+  "bias_mrad": 5.501526210228834,
+  "wander_mrad": 32.9482308282351,
+  "detection": 0.9833333333333333
+ },
+ "n12_K10_s1_sdr-default": {
+  "rms_mrad": 78.7241075273695,
+  "bias_mrad": 36.98823685567911,
+  "wander_mrad": 69.50918053314186,
+  "detection": 0.9833333333333333
+ },
+ "n12_K10_s2_sdr-default": {
+  "rms_mrad": 31.77149555297577,
+  "bias_mrad": 0.8431199575537967,
+  "wander_mrad": 31.76063833769572,
+  "detection": 0.9833333333333333
+ },
+ "n20_K10_s0_sdr-default": {
+  "rms_mrad": 31.453463073043128,
+  "bias_mrad": 10.272745101142807,
+  "wander_mrad": 29.728899631384984,
+  "detection": 0.9833333333333333
+ },
+ "n20_K10_s1_sdr-default": {
+  "rms_mrad": 79.43752098908466,
+  "bias_mrad": 46.12155003334833,
+  "wander_mrad": 64.70022000733994,
+  "detection": 0.9833333333333333
+ },
+ "n20_K10_s2_sdr-default": {
+  "rms_mrad": 22.93665187051254,
+  "bias_mrad": 3.373518939670199,
+  "wander_mrad": 22.687094394964973,
+  "detection": 0.9833333333333333
+ },
+ "n1_K20_s0_sdr-default": {
+  "rms_mrad": 137.09394355726846,
+  "bias_mrad": 2.5135212981460735,
+  "wander_mrad": 137.14279365266293,
+  "detection": 0.9833333333333333
+ },
+ "n1_K20_s1_sdr-default": {
+  "rms_mrad": 159.24913275635112,
+  "bias_mrad": 13.034120532993807,
+  "wander_mrad": 158.77656528974984,
+  "detection": 0.9833333333333333
+ },
+ "n1_K20_s2_sdr-default": {
+  "rms_mrad": 119.29196513812343,
+  "bias_mrad": 7.24243418612704,
+  "wander_mrad": 119.08942294907882,
+  "detection": 0.9833333333333333
+ },
+ "n2_K20_s0_sdr-default": {
+  "rms_mrad": 81.82177685220961,
+  "bias_mrad": 3.2993961251783572,
+  "wander_mrad": 81.78012059105983,
+  "detection": 0.9833333333333333
+ },
+ "n2_K20_s1_sdr-default": {
+  "rms_mrad": 97.65076783660919,
+  "bias_mrad": 18.969402176782157,
+  "wander_mrad": 95.7445032630988,
+  "detection": 0.9833333333333333
+ },
+ "n2_K20_s2_sdr-default": {
+  "rms_mrad": 74.75853691037192,
+  "bias_mrad": 2.387029096740381,
+  "wander_mrad": 74.72367498340056,
+  "detection": 0.9833333333333333
+ },
+ "n3_K20_s0_sdr-default": {
+  "rms_mrad": 62.1554989520374,
+  "bias_mrad": 2.19552586987023,
+  "wander_mrad": 62.109947809985755,
+  "detection": 0.9833333333333333
+ },
+ "n3_K20_s1_sdr-default": {
+  "rms_mrad": 85.03043633505243,
+  "bias_mrad": 17.66086957541708,
+  "wander_mrad": 83.15387944000435,
+  "detection": 0.9833333333333333
+ },
+ "n3_K20_s2_sdr-default": {
+  "rms_mrad": 57.058624669248786,
+  "bias_mrad": 16.660620520225592,
+  "wander_mrad": 54.56646358133313,
+  "detection": 0.9833333333333333
+ },
+ "n5_K20_s0_sdr-default": {
+  "rms_mrad": 48.69508877807681,
+  "bias_mrad": 4.358693859219966,
+  "wander_mrad": 48.501297421269825,
+  "detection": 0.9833333333333333
+ },
+ "n5_K20_s1_sdr-default": {
+  "rms_mrad": 74.74342061109031,
+  "bias_mrad": 19.05071878897164,
+  "wander_mrad": 72.26031769244969,
+  "detection": 0.9833333333333333
+ },
+ "n5_K20_s2_sdr-default": {
+  "rms_mrad": 40.184986509074186,
+  "bias_mrad": 4.157970100500175,
+  "wander_mrad": 39.96981569116094,
+  "detection": 0.9833333333333333
+ },
+ "n8_K20_s0_sdr-default": {
+  "rms_mrad": 36.79558933409633,
+  "bias_mrad": 0.3646219379434633,
+  "wander_mrad": 36.794192801115464,
+  "detection": 0.9833333333333333
+ },
+ "n8_K20_s1_sdr-default": {
+  "rms_mrad": 70.30724737721,
+  "bias_mrad": 13.294179628123022,
+  "wander_mrad": 69.03231366311493,
+  "detection": 0.9833333333333333
+ },
+ "n8_K20_s2_sdr-default": {
+  "rms_mrad": 33.70945769918531,
+  "bias_mrad": 6.791516653662765,
+  "wander_mrad": 33.01829523046888,
+  "detection": 0.9833333333333333
+ },
+ "n12_K20_s0_sdr-default": {
+  "rms_mrad": 32.945857238626395,
+  "bias_mrad": 5.702824035998855,
+  "wander_mrad": 32.448141700234736,
+  "detection": 0.9833333333333333
+ },
+ "n12_K20_s1_sdr-default": {
+  "rms_mrad": 65.61907541656323,
+  "bias_mrad": 16.722015828221537,
+  "wander_mrad": 63.44968330605843,
+  "detection": 0.9833333333333333
+ },
+ "n12_K20_s2_sdr-default": {
+  "rms_mrad": 26.60447735482249,
+  "bias_mrad": 1.6612435114368334,
+  "wander_mrad": 26.552420743559423,
+  "detection": 0.9833333333333333
+ },
+ "n20_K20_s0_sdr-default": {
+  "rms_mrad": 27.883787023327436,
+  "bias_mrad": 1.2952117872469904,
+  "wander_mrad": 27.85366556756742,
+  "detection": 0.9833333333333333
+ },
+ "n20_K20_s1_sdr-default": {
+  "rms_mrad": 60.42656546973593,
+  "bias_mrad": 6.069940337195521,
+  "wander_mrad": 60.121266106968214,
+  "detection": 0.9833333333333333
+ },
+ "n20_K20_s2_sdr-default": {
+  "rms_mrad": 22.884409976742134,
+  "bias_mrad": 3.592779351191991,
+  "wander_mrad": 22.600440695755022,
+  "detection": 0.9833333333333333
+ },
+ "n1_K40_s0_sdr-default": {
+  "rms_mrad": 121.84547377067511,
+  "bias_mrad": 10.895085271616066,
+  "wander_mrad": 121.38052372749974,
+  "detection": 0.9833333333333333
+ },
+ "n1_K40_s1_sdr-default": {
+  "rms_mrad": 167.8849443119835,
+  "bias_mrad": 36.876688073994174,
+  "wander_mrad": 163.69864518951042,
+  "detection": 0.9833333333333333
+ },
+ "n1_K40_s2_sdr-default": {
+  "rms_mrad": 114.9087510529068,
+  "bias_mrad": 28.06890350011619,
+  "wander_mrad": 111.4774586264316,
+  "detection": 0.9833333333333333
+ },
+ "n2_K40_s0_sdr-default": {
+  "rms_mrad": 78.33611945117013,
+  "bias_mrad": 18.41336983665271,
+  "wander_mrad": 76.11618170334482,
+  "detection": 0.9833333333333333
+ },
+ "n2_K40_s1_sdr-default": {
+  "rms_mrad": 102.07248373433261,
+  "bias_mrad": 2.4269746285439595,
+  "wander_mrad": 102.05960401760953,
+  "detection": 0.9833333333333333
+ },
+ "n2_K40_s2_sdr-default": {
+  "rms_mrad": 86.03986580780386,
+  "bias_mrad": 10.277051248238928,
+  "wander_mrad": 85.4246210583966,
+  "detection": 0.9833333333333333
+ },
+ "n3_K40_s0_sdr-default": {
+  "rms_mrad": 55.34423137128837,
+  "bias_mrad": 9.78394043186807,
+  "wander_mrad": 54.477391456697,
+  "detection": 0.9833333333333333
+ },
+ "n3_K40_s1_sdr-default": {
+  "rms_mrad": 97.45183016615756,
+  "bias_mrad": 34.397524484027905,
+  "wander_mrad": 91.16512495693337,
+  "detection": 0.9833333333333333
+ },
+ "n3_K40_s2_sdr-default": {
+  "rms_mrad": 52.94611446884785,
+  "bias_mrad": 0.09863761877826302,
+  "wander_mrad": 52.9473458199656,
+  "detection": 0.9833333333333333
+ },
+ "n5_K40_s0_sdr-default": {
+  "rms_mrad": 46.249460303177,
+  "bias_mrad": 16.8191649490643,
+  "wander_mrad": 43.080949678701316,
+  "detection": 0.9833333333333333
+ },
+ "n5_K40_s1_sdr-default": {
+  "rms_mrad": 77.43389734543256,
+  "bias_mrad": 26.224450842569414,
+  "wander_mrad": 72.84613858958211,
+  "detection": 0.9833333333333333
+ },
+ "n5_K40_s2_sdr-default": {
+  "rms_mrad": 47.748752333616395,
+  "bias_mrad": 10.838661103754955,
+  "wander_mrad": 46.5037977290604,
+  "detection": 0.9833333333333333
+ },
+ "n8_K40_s0_sdr-default": {
+  "rms_mrad": 140.96583018614788,
+  "bias_mrad": 76.86577999811125,
+  "wander_mrad": 118.16982106723704,
+  "detection": 0.9833333333333333
+ },
+ "n8_K40_s1_sdr-default": {
+  "rms_mrad": 138.76913896511883,
+  "bias_mrad": 56.46484597551055,
+  "wander_mrad": 126.80772815475702,
+  "detection": 0.9833333333333333
+ },
+ "n8_K40_s2_sdr-default": {
+  "rms_mrad": 148.74180422582384,
+  "bias_mrad": 101.22587422575099,
+  "wander_mrad": 108.96448265522682,
+  "detection": 0.9833333333333333
+ },
+ "n12_K40_s0_sdr-default": {
+  "rms_mrad": 119.74390886306612,
+  "bias_mrad": 61.8160890255845,
+  "wander_mrad": 102.561108967139,
+  "detection": 0.9833333333333333
+ },
+ "n12_K40_s1_sdr-default": {
+  "rms_mrad": 132.1250599051243,
+  "bias_mrad": 45.76944007322153,
+  "wander_mrad": 123.99385286161517,
+  "detection": 0.9833333333333333
+ },
+ "n12_K40_s2_sdr-default": {
+  "rms_mrad": 132.2406945773079,
+  "bias_mrad": 81.8988837136087,
+  "wander_mrad": 103.81311531064027,
+  "detection": 0.9833333333333333
+ },
+ "n20_K40_s0_sdr-default": {
+  "rms_mrad": 183.5907077519833,
+  "bias_mrad": 113.04788440192401,
+  "wander_mrad": 144.62556557958445,
+  "detection": 0.9833333333333333
+ },
+ "n20_K40_s1_sdr-default": {
+  "rms_mrad": 198.7224975432313,
+  "bias_mrad": 128.99895153434818,
+  "wander_mrad": 151.1176189929218,
+  "detection": 0.9833333333333333
+ },
+ "n20_K40_s2_sdr-default": {
+  "rms_mrad": 169.2361309454512,
+  "bias_mrad": 101.13096050228789,
+  "wander_mrad": 135.67914610587755,
+  "detection": 0.9833333333333333
+ },
+ "n1_K80_s0_sdr-default": {
+  "rms_mrad": 112.3384796853844,
+  "bias_mrad": 10.034556924620889,
+  "wander_mrad": 111.89838479322754,
+  "detection": 0.9833333333333333
+ },
+ "n1_K80_s1_sdr-default": {
+  "rms_mrad": 132.8138063623041,
+  "bias_mrad": 27.810597392808983,
+  "wander_mrad": 129.96579187534138,
+  "detection": 0.9833333333333333
+ },
+ "n1_K80_s2_sdr-default": {
+  "rms_mrad": 136.02493448988628,
+  "bias_mrad": 12.376677551367166,
+  "wander_mrad": 135.54511511886827,
+  "detection": 0.9833333333333333
+ },
+ "n2_K80_s0_sdr-default": {
+  "rms_mrad": 97.85901018554038,
+  "bias_mrad": 52.37835018133775,
+  "wander_mrad": 82.65874865699787,
+  "detection": 0.9833333333333333
+ },
+ "n2_K80_s1_sdr-default": {
+  "rms_mrad": 104.8168053630588,
+  "bias_mrad": 12.278696201608435,
+  "wander_mrad": 104.08184056036055,
+  "detection": 0.9833333333333333
+ },
+ "n2_K80_s2_sdr-default": {
+  "rms_mrad": 82.31856460542895,
+  "bias_mrad": 7.897428371508548,
+  "wander_mrad": 81.93480520798339,
+  "detection": 0.9833333333333333
+ },
+ "n3_K80_s0_sdr-default": {
+  "rms_mrad": 52.821991269751585,
+  "bias_mrad": 12.024089455682066,
+  "wander_mrad": 51.438641015319895,
+  "detection": 0.9833333333333333
+ },
+ "n3_K80_s1_sdr-default": {
+  "rms_mrad": 98.51509671251252,
+  "bias_mrad": 51.63238658853109,
+  "wander_mrad": 83.86224141836018,
+  "detection": 0.9833333333333333
+ },
+ "n3_K80_s2_sdr-default": {
+  "rms_mrad": 55.99449747149822,
+  "bias_mrad": 10.263596948590186,
+  "wander_mrad": 55.04817298305846,
+  "detection": 0.9833333333333333
+ },
+ "n5_K80_s0_sdr-default": {
+  "rms_mrad": 50.22723768187893,
+  "bias_mrad": 19.583789577598615,
+  "wander_mrad": 46.252182526547855,
+  "detection": 0.9833333333333333
+ },
+ "n5_K80_s1_sdr-default": {
+  "rms_mrad": 74.31767196981164,
+  "bias_mrad": 23.24792146008834,
+  "wander_mrad": 70.58309067141927,
+  "detection": 0.9833333333333333
+ },
+ "n5_K80_s2_sdr-default": {
+  "rms_mrad": 45.13963689008099,
+  "bias_mrad": 17.11291993885827,
+  "wander_mrad": 41.7716231881854,
+  "detection": 0.9833333333333333
+ },
+ "n8_K80_s0_sdr-default": {
+  "rms_mrad": 223.4353063917761,
+  "bias_mrad": 219.87104706819375,
+  "wander_mrad": 39.78998628999464,
+  "detection": 0.9833333333333333
+ },
+ "n8_K80_s1_sdr-default": {
+  "rms_mrad": 211.17580977609927,
+  "bias_mrad": 200.37653439574294,
+  "wander_mrad": 66.76400106509813,
+  "detection": 0.9833333333333333
+ },
+ "n8_K80_s2_sdr-default": {
+  "rms_mrad": 243.03567448096408,
+  "bias_mrad": 240.8836012718716,
+  "wander_mrad": 32.27174852637128,
+  "detection": 0.9833333333333333
+ },
+ "n12_K80_s0_sdr-default": {
+  "rms_mrad": 191.31511158111755,
+  "bias_mrad": 188.60324827126033,
+  "wander_mrad": 32.114257781397555,
+  "detection": 0.9833333333333333
+ },
+ "n12_K80_s1_sdr-default": {
+  "rms_mrad": 193.97683538853593,
+  "bias_mrad": 183.80740179988925,
+  "wander_mrad": 62.070408775462056,
+  "detection": 0.9833333333333333
+ },
+ "n12_K80_s2_sdr-default": {
+  "rms_mrad": 220.7117535984426,
+  "bias_mrad": 218.99249344133372,
+  "wander_mrad": 27.49328096861962,
+  "detection": 0.9833333333333333
+ },
+ "n20_K80_s0_sdr-default": {
+  "rms_mrad": 309.53922065436115,
+  "bias_mrad": 308.431872722236,
+  "wander_mrad": 26.13931013543492,
+  "detection": 0.9833333333333333
+ },
+ "n20_K80_s1_sdr-default": {
+  "rms_mrad": 325.1765305117684,
+  "bias_mrad": 319.8847781772994,
+  "wander_mrad": 58.278452933424816,
+  "detection": 0.9833333333333333
+ },
+ "n20_K80_s2_sdr-default": {
+  "rms_mrad": 280.20287057552537,
+  "bias_mrad": 279.3200414211993,
+  "wander_mrad": 22.226067839793618,
+  "detection": 0.9833333333333333
+ },
+ "n1_K160_s0_sdr-default": {
+  "rms_mrad": 106.47989229583484,
+  "bias_mrad": 2.758125725090969,
+  "wander_mrad": 106.44980897853672,
+  "detection": 0.9833333333333333
+ },
+ "n1_K160_s1_sdr-default": {
+  "rms_mrad": 133.26720906398555,
+  "bias_mrad": 28.088438292823973,
+  "wander_mrad": 130.37059656252268,
+  "detection": 0.9833333333333333
+ },
+ "n1_K160_s2_sdr-default": {
+  "rms_mrad": 137.86579443994185,
+  "bias_mrad": 18.670752314297943,
+  "wander_mrad": 136.69119341749743,
+  "detection": 0.9833333333333333
+ },
+ "n2_K160_s0_sdr-default": {
+  "rms_mrad": 97.85901018554038,
+  "bias_mrad": 52.37835018133775,
+  "wander_mrad": 82.65874865699787,
+  "detection": 0.9833333333333333
+ },
+ "n2_K160_s1_sdr-default": {
+  "rms_mrad": 104.8168053630588,
+  "bias_mrad": 12.278696201608435,
+  "wander_mrad": 104.08184056036055,
+  "detection": 0.9833333333333333
+ },
+ "n2_K160_s2_sdr-default": {
+  "rms_mrad": 82.31856460542895,
+  "bias_mrad": 7.897428371508548,
+  "wander_mrad": 81.93480520798339,
+  "detection": 0.9833333333333333
+ },
+ "n3_K160_s0_sdr-default": {
+  "rms_mrad": 52.821991269751585,
+  "bias_mrad": 12.024089455682066,
+  "wander_mrad": 51.438641015319895,
+  "detection": 0.9833333333333333
+ },
+ "n3_K160_s1_sdr-default": {
+  "rms_mrad": 98.51509671251252,
+  "bias_mrad": 51.63238658853109,
+  "wander_mrad": 83.86224141836018,
+  "detection": 0.9833333333333333
+ },
+ "n3_K160_s2_sdr-default": {
+  "rms_mrad": 55.99449747149822,
+  "bias_mrad": 10.263596948590186,
+  "wander_mrad": 55.04817298305846,
+  "detection": 0.9833333333333333
+ },
+ "n5_K160_s0_sdr-default": {
+  "rms_mrad": 50.22723768187893,
+  "bias_mrad": 19.583789577598615,
+  "wander_mrad": 46.252182526547855,
+  "detection": 0.9833333333333333
+ },
+ "n5_K160_s1_sdr-default": {
+  "rms_mrad": 74.31767196981164,
+  "bias_mrad": 23.24792146008834,
+  "wander_mrad": 70.58309067141927,
+  "detection": 0.9833333333333333
+ },
+ "n5_K160_s2_sdr-default": {
+  "rms_mrad": 45.13963689008099,
+  "bias_mrad": 17.11291993885827,
+  "wander_mrad": 41.7716231881854,
+  "detection": 0.9833333333333333
+ },
+ "n8_K160_s0_sdr-default": {
+  "rms_mrad": 223.4353063917761,
+  "bias_mrad": 219.87104706819375,
+  "wander_mrad": 39.78998628999464,
+  "detection": 0.9833333333333333
+ },
+ "n8_K160_s1_sdr-default": {
+  "rms_mrad": 211.17580977609927,
+  "bias_mrad": 200.37653439574294,
+  "wander_mrad": 66.76400106509813,
+  "detection": 0.9833333333333333
+ },
+ "n8_K160_s2_sdr-default": {
+  "rms_mrad": 243.03567448096408,
+  "bias_mrad": 240.8836012718716,
+  "wander_mrad": 32.27174852637128,
+  "detection": 0.9833333333333333
+ },
+ "n12_K160_s0_sdr-default": {
+  "rms_mrad": 191.31511158111755,
+  "bias_mrad": 188.60324827126033,
+  "wander_mrad": 32.114257781397555,
+  "detection": 0.9833333333333333
+ },
+ "n12_K160_s1_sdr-default": {
+  "rms_mrad": 193.97683538853593,
+  "bias_mrad": 183.80740179988925,
+  "wander_mrad": 62.070408775462056,
+  "detection": 0.9833333333333333
+ },
+ "n12_K160_s2_sdr-default": {
+  "rms_mrad": 220.7117535984426,
+  "bias_mrad": 218.99249344133372,
+  "wander_mrad": 27.49328096861962,
+  "detection": 0.9833333333333333
+ },
+ "n20_K160_s0_sdr-default": {
+  "rms_mrad": 309.53922065436115,
+  "bias_mrad": 308.431872722236,
+  "wander_mrad": 26.13931013543492,
+  "detection": 0.9833333333333333
+ },
+ "n20_K160_s1_sdr-default": {
+  "rms_mrad": 325.1765305117684,
+  "bias_mrad": 319.8847781772994,
+  "wander_mrad": 58.278452933424816,
+  "detection": 0.9833333333333333
+ },
+ "n20_K160_s2_sdr-default": {
+  "rms_mrad": 280.20287057552537,
+  "bias_mrad": 279.3200414211993,
+  "wander_mrad": 22.226067839793618,
+  "detection": 0.9833333333333333
+ },
+ "n1_K20_s0_sdr-default_i80": {
+  "rms_mrad": 111.99190933850757,
+  "bias_mrad": 10.358469407702009,
+  "wander_mrad": 111.54522247203458,
+  "detection": 0.9875
+ },
+ "n1_K20_s1_sdr-default_i80": {
+  "rms_mrad": 151.94994646526175,
+  "bias_mrad": 10.038418348661542,
+  "wander_mrad": 151.66841230675772,
+  "detection": 0.9875
+ },
+ "n1_K20_s2_sdr-default_i80": {
+  "rms_mrad": 124.13455085319036,
+  "bias_mrad": 27.095581119329374,
+  "wander_mrad": 121.16251899624223,
+  "detection": 0.9875
+ },
+ "n2_K20_s0_sdr-default_i80": {
+  "rms_mrad": 74.06577885734838,
+  "bias_mrad": 10.514359002999402,
+  "wander_mrad": 73.32658424446596,
+  "detection": 0.9875
+ },
+ "n2_K20_s1_sdr-default_i80": {
+  "rms_mrad": 101.3969853643314,
+  "bias_mrad": 4.371801131544385,
+  "wander_mrad": 101.26155200338383,
+  "detection": 0.9875
+ },
+ "n2_K20_s2_sdr-default_i80": {
+  "rms_mrad": 63.95630980155971,
+  "bias_mrad": 6.160516086349488,
+  "wander_mrad": 63.66011840491162,
+  "detection": 0.9875
+ },
+ "n3_K20_s0_sdr-default_i80": {
+  "rms_mrad": 57.35588138057735,
+  "bias_mrad": 2.5518556413641273,
+  "wander_mrad": 57.29224974243609,
+  "detection": 0.9875
+ },
+ "n3_K20_s1_sdr-default_i80": {
+  "rms_mrad": 84.58669160407909,
+  "bias_mrad": 2.613540608837942,
+  "wander_mrad": 84.53085552804403,
+  "detection": 0.9875
+ },
+ "n3_K20_s2_sdr-default_i80": {
+  "rms_mrad": 60.309468930354925,
+  "bias_mrad": 2.267192968279746,
+  "wander_mrad": 60.26195259916428,
+  "detection": 0.9875
+ },
+ "n5_K20_s0_sdr-default_i80": {
+  "rms_mrad": 46.2014042508752,
+  "bias_mrad": 5.465300157196133,
+  "wander_mrad": 45.874470664192316,
+  "detection": 0.9875
+ },
+ "n5_K20_s1_sdr-default_i80": {
+  "rms_mrad": 77.30224436817633,
+  "bias_mrad": 0.6640110303020685,
+  "wander_mrad": 77.29053573442249,
+  "detection": 0.9875
+ },
+ "n5_K20_s2_sdr-default_i80": {
+  "rms_mrad": 40.29291839619244,
+  "bias_mrad": 5.846148597876846,
+  "wander_mrad": 39.8667084619876,
+  "detection": 0.9875
+ },
+ "n8_K20_s0_sdr-default_i80": {
+  "rms_mrad": 37.23883933811102,
+  "bias_mrad": 6.147015511905939,
+  "wander_mrad": 36.72826048073783,
+  "detection": 0.9875
+ },
+ "n8_K20_s1_sdr-default_i80": {
+  "rms_mrad": 68.62251219373307,
+  "bias_mrad": 8.30790077555059,
+  "wander_mrad": 68.11919811272404,
+  "detection": 0.9875
+ },
+ "n8_K20_s2_sdr-default_i80": {
+  "rms_mrad": 33.378913127631904,
+  "bias_mrad": 2.607634182834129,
+  "wander_mrad": 33.27730476134895,
+  "detection": 0.9875
+ },
+ "n12_K20_s0_sdr-default_i80": {
+  "rms_mrad": 30.735345097646352,
+  "bias_mrad": 1.6854284430861908,
+  "wander_mrad": 30.688759760029907,
+  "detection": 0.9875
+ },
+ "n12_K20_s1_sdr-default_i80": {
+  "rms_mrad": 68.84484388459428,
+  "bias_mrad": 5.935552337802326,
+  "wander_mrad": 68.59094160116932,
+  "detection": 0.9875
+ },
+ "n12_K20_s2_sdr-default_i80": {
+  "rms_mrad": 27.941448419744642,
+  "bias_mrad": 5.854224078333287,
+  "wander_mrad": 27.3213843884787,
+  "detection": 0.9875
+ },
+ "n20_K20_s0_sdr-default_i80": {
+  "rms_mrad": 27.12616068544078,
+  "bias_mrad": 3.147704521872876,
+  "wander_mrad": 26.942298650175246,
+  "detection": 0.9875
+ },
+ "n20_K20_s1_sdr-default_i80": {
+  "rms_mrad": 62.326456941380485,
+  "bias_mrad": 4.7633676090711905,
+  "wander_mrad": 62.14484147028014,
+  "detection": 0.9875
+ },
+ "n20_K20_s2_sdr-default_i80": {
+  "rms_mrad": 21.874826794116306,
+  "bias_mrad": 6.5185092083417615,
+  "wander_mrad": 20.880806856329784,
+  "detection": 0.9875
+ },
+ "n1_K40_s0_sdr-default_i160": {
+  "rms_mrad": 114.96925176152033,
+  "bias_mrad": 23.168823198034328,
+  "wander_mrad": 112.65160272856195,
+  "detection": 0.99375
+ },
+ "n1_K40_s1_sdr-default_i160": {
+  "rms_mrad": 160.69466008781987,
+  "bias_mrad": 14.32977678579603,
+  "wander_mrad": 160.03852314348785,
+  "detection": 0.99375
+ },
+ "n1_K40_s2_sdr-default_i160": {
+  "rms_mrad": 101.52823607217668,
+  "bias_mrad": 3.0330660356709207,
+  "wander_mrad": 101.49237547601794,
+  "detection": 0.99375
+ },
+ "n2_K40_s0_sdr-default_i160": {
+  "rms_mrad": 74.47770343726815,
+  "bias_mrad": 0.6285246407904673,
+  "wander_mrad": 74.4803871558689,
+  "detection": 0.99375
+ },
+ "n2_K40_s1_sdr-default_i160": {
+  "rms_mrad": 87.20507145697817,
+  "bias_mrad": 7.118941173600808,
+  "wander_mrad": 86.90409826870227,
+  "detection": 0.99375
+ },
+ "n2_K40_s2_sdr-default_i160": {
+  "rms_mrad": 74.54743712358699,
+  "bias_mrad": 9.4586498956264,
+  "wander_mrad": 73.93188230956872,
+  "detection": 0.99375
+ },
+ "n3_K40_s0_sdr-default_i160": {
+  "rms_mrad": 61.72474050897152,
+  "bias_mrad": 3.323069355428985,
+  "wander_mrad": 61.628840949919805,
+  "detection": 0.99375
+ },
+ "n3_K40_s1_sdr-default_i160": {
+  "rms_mrad": 79.6565296834797,
+  "bias_mrad": 8.108130325028457,
+  "wander_mrad": 79.2400871220409,
+  "detection": 0.99375
+ },
+ "n3_K40_s2_sdr-default_i160": {
+  "rms_mrad": 59.630935987300745,
+  "bias_mrad": 0.21352696183685463,
+  "wander_mrad": 59.632192234091406,
+  "detection": 0.99375
+ },
+ "n5_K40_s0_sdr-default_i160": {
+  "rms_mrad": 46.48135143602764,
+  "bias_mrad": 12.85578252651538,
+  "wander_mrad": 44.667388924953165,
+  "detection": 0.99375
+ },
+ "n5_K40_s1_sdr-default_i160": {
+  "rms_mrad": 72.40599894994946,
+  "bias_mrad": 16.8819553238405,
+  "wander_mrad": 70.41254016354144,
+  "detection": 0.99375
+ },
+ "n5_K40_s2_sdr-default_i160": {
+  "rms_mrad": 42.54155520630701,
+  "bias_mrad": 8.94621077035403,
+  "wander_mrad": 41.58992149290617,
+  "detection": 0.99375
+ },
+ "n8_K40_s0_sdr-default_i160": {
+  "rms_mrad": 41.97222964152756,
+  "bias_mrad": 19.692533452222854,
+  "wander_mrad": 37.067014456746186,
+  "detection": 0.99375
+ },
+ "n8_K40_s1_sdr-default_i160": {
+  "rms_mrad": 67.2865105113728,
+  "bias_mrad": 16.02693299508044,
+  "wander_mrad": 65.35631167405516,
+  "detection": 0.99375
+ },
+ "n8_K40_s2_sdr-default_i160": {
+  "rms_mrad": 33.16205900338242,
+  "bias_mrad": 1.7325921329890417,
+  "wander_mrad": 33.116650920765636,
+  "detection": 0.99375
+ },
+ "n12_K40_s0_sdr-default_i160": {
+  "rms_mrad": 33.40995630244592,
+  "bias_mrad": 8.002993793120078,
+  "wander_mrad": 32.43721755319121,
+  "detection": 0.99375
+ },
+ "n12_K40_s1_sdr-default_i160": {
+  "rms_mrad": 63.917308775987394,
+  "bias_mrad": 19.305261955595412,
+  "wander_mrad": 60.94195989334619,
+  "detection": 0.99375
+ },
+ "n12_K40_s2_sdr-default_i160": {
+  "rms_mrad": 24.658346347260725,
+  "bias_mrad": 1.0832098379380561,
+  "wander_mrad": 24.634449114125335,
+  "detection": 0.99375
+ },
+ "n20_K40_s0_sdr-default_i160": {
+  "rms_mrad": 30.761081663865827,
+  "bias_mrad": 14.970302778848767,
+  "wander_mrad": 26.87339887667739,
+  "detection": 0.99375
+ },
+ "n20_K40_s1_sdr-default_i160": {
+  "rms_mrad": 62.058716024445125,
+  "bias_mrad": 22.24502619296118,
+  "wander_mrad": 57.94503562690309,
+  "detection": 0.99375
+ },
+ "n20_K40_s2_sdr-default_i160": {
+  "rms_mrad": 21.35914436591636,
+  "bias_mrad": 4.232351584061542,
+  "wander_mrad": 20.935715972946415,
+  "detection": 0.99375
+ },
+ "n1_K80_s0_sdr-default_i320": {
+  "rms_mrad": 130.9215288220324,
+  "bias_mrad": 6.508964015840833,
+  "wander_mrad": 130.8076623649053,
+  "detection": 0.996875
+ },
+ "n1_K80_s1_sdr-default_i320": {
+  "rms_mrad": 141.55158545481487,
+  "bias_mrad": 5.570796302483232,
+  "wander_mrad": 141.4318923707151,
+  "detection": 0.996875
+ },
+ "n1_K80_s2_sdr-default_i320": {
+  "rms_mrad": 123.76027109717755,
+  "bias_mrad": 7.443987205961488,
+  "wander_mrad": 123.53773650256782,
+  "detection": 0.996875
+ },
+ "n2_K80_s0_sdr-default_i320": {
+  "rms_mrad": 72.37350950074844,
+  "bias_mrad": 9.192772534655518,
+  "wander_mrad": 71.78320479840738,
+  "detection": 0.996875
+ },
+ "n2_K80_s1_sdr-default_i320": {
+  "rms_mrad": 101.62516114348898,
+  "bias_mrad": 3.2745901001484357,
+  "wander_mrad": 101.56141019970039,
+  "detection": 0.996875
+ },
+ "n2_K80_s2_sdr-default_i320": {
+  "rms_mrad": 70.88902629498659,
+  "bias_mrad": 5.569243701949294,
+  "wander_mrad": 70.67704497253854,
+  "detection": 0.996875
+ },
+ "n3_K80_s0_sdr-default_i320": {
+  "rms_mrad": 59.33448095474303,
+  "bias_mrad": 11.433017724241259,
+  "wander_mrad": 58.22479594909172,
+  "detection": 0.996875
+ },
+ "n3_K80_s1_sdr-default_i320": {
+  "rms_mrad": 87.84382719308536,
+  "bias_mrad": 4.824633832463756,
+  "wander_mrad": 87.70559259330824,
+  "detection": 0.996875
+ },
+ "n3_K80_s2_sdr-default_i320": {
+  "rms_mrad": 54.67366431356737,
+  "bias_mrad": 1.772030798107427,
+  "wander_mrad": 54.64560094032657,
+  "detection": 0.996875
+ },
+ "n5_K80_s0_sdr-default_i320": {
+  "rms_mrad": 47.00295786756498,
+  "bias_mrad": 1.92231154644804,
+  "wander_mrad": 46.96347510999139,
+  "detection": 0.996875
+ },
+ "n5_K80_s1_sdr-default_i320": {
+  "rms_mrad": 75.03593182519329,
+  "bias_mrad": 12.036913170865867,
+  "wander_mrad": 74.06231843687998,
+  "detection": 0.996875
+ },
+ "n5_K80_s2_sdr-default_i320": {
+  "rms_mrad": 40.98103779111188,
+  "bias_mrad": 4.6784426797484935,
+  "wander_mrad": 40.71338948461011,
+  "detection": 0.996875
+ },
+ "n8_K80_s0_sdr-default_i320": {
+  "rms_mrad": 36.928104053202205,
+  "bias_mrad": 2.6771913944822305,
+  "wander_mrad": 36.83085123379843,
+  "detection": 0.996875
+ },
+ "n8_K80_s1_sdr-default_i320": {
+  "rms_mrad": 67.16777788830734,
+  "bias_mrad": 10.899451522444899,
+  "wander_mrad": 66.27886242922078,
+  "detection": 0.996875
+ },
+ "n8_K80_s2_sdr-default_i320": {
+  "rms_mrad": 34.36533978587658,
+  "bias_mrad": 1.1301597871159665,
+  "wander_mrad": 34.346915375982775,
+  "detection": 0.996875
+ },
+ "n12_K80_s0_sdr-default_i320": {
+  "rms_mrad": 34.21990407053481,
+  "bias_mrad": 8.010926319462715,
+  "wander_mrad": 33.26907377055525,
+  "detection": 0.996875
+ },
+ "n12_K80_s1_sdr-default_i320": {
+  "rms_mrad": 66.25175823420801,
+  "bias_mrad": 18.526657316096355,
+  "wander_mrad": 63.616805716516524,
+  "detection": 0.996875
+ },
+ "n12_K80_s2_sdr-default_i320": {
+  "rms_mrad": 27.985257042264887,
+  "bias_mrad": 4.684278038689663,
+  "wander_mrad": 27.590470615523387,
+  "detection": 0.996875
+ },
+ "n20_K80_s0_sdr-default_i320": {
+  "rms_mrad": 29.512624708489096,
+  "bias_mrad": 7.576180257959567,
+  "wander_mrad": 28.52381683986139,
+  "detection": 0.996875
+ },
+ "n20_K80_s1_sdr-default_i320": {
+  "rms_mrad": 61.812596185758494,
+  "bias_mrad": 10.70307369401324,
+  "wander_mrad": 60.883001982070176,
+  "detection": 0.996875
+ },
+ "n20_K80_s2_sdr-default_i320": {
+  "rms_mrad": 22.585435931870602,
+  "bias_mrad": 2.0257446196434934,
+  "wander_mrad": 22.49439909291862,
+  "detection": 0.996875
+ },
+ "n1_K160_s0_sdr-default_i640": {
+  "rms_mrad": 118.27418179292063,
+  "bias_mrad": 16.833537485420596,
+  "wander_mrad": 117.05316755566524,
+  "detection": 0.9984375
+ },
+ "n1_K160_s1_sdr-default_i640": {
+  "rms_mrad": 136.26677761134212,
+  "bias_mrad": 3.897886866700889,
+  "wander_mrad": 136.2404124973513,
+  "detection": 0.9984375
+ },
+ "n1_K160_s2_sdr-default_i640": {
+  "rms_mrad": 123.04305956735715,
+  "bias_mrad": 6.0593338715668805,
+  "wander_mrad": 122.90232729957084,
+  "detection": 0.9984375
+ },
+ "n2_K160_s0_sdr-default_i640": {
+  "rms_mrad": 77.22953595981379,
+  "bias_mrad": 9.715226990187315,
+  "wander_mrad": 76.62060114129042,
+  "detection": 0.9984375
+ },
+ "n2_K160_s1_sdr-default_i640": {
+  "rms_mrad": 101.23285510302308,
+  "bias_mrad": 4.128548286210619,
+  "wander_mrad": 101.12939307003353,
+  "detection": 0.9984375
+ },
+ "n2_K160_s2_sdr-default_i640": {
+  "rms_mrad": 72.9903671575238,
+  "bias_mrad": 6.356012508820972,
+  "wander_mrad": 72.7169563557298,
+  "detection": 0.9984375
+ },
+ "n3_K160_s0_sdr-default_i640": {
+  "rms_mrad": 60.275404988615655,
+  "bias_mrad": 6.397349696601,
+  "wander_mrad": 59.93692506962589,
+  "detection": 0.9984375
+ },
+ "n3_K160_s1_sdr-default_i640": {
+  "rms_mrad": 87.2432572979345,
+  "bias_mrad": 0.8485337634461231,
+  "wander_mrad": 87.22128581000108,
+  "detection": 0.9984375
+ },
+ "n3_K160_s2_sdr-default_i640": {
+  "rms_mrad": 49.41080694863642,
+  "bias_mrad": 3.844354944696638,
+  "wander_mrad": 49.26148457958964,
+  "detection": 0.9984375
+ },
+ "n5_K160_s0_sdr-default_i640": {
+  "rms_mrad": 45.92210052264589,
+  "bias_mrad": 10.087457435153075,
+  "wander_mrad": 44.79992858762811,
+  "detection": 0.9984375
+ },
+ "n5_K160_s1_sdr-default_i640": {
+  "rms_mrad": 72.58070519858215,
+  "bias_mrad": 6.128883275682686,
+  "wander_mrad": 72.32000465450604,
+  "detection": 0.9984375
+ },
+ "n5_K160_s2_sdr-default_i640": {
+  "rms_mrad": 43.299124059845994,
+  "bias_mrad": 1.9706393096272787,
+  "wander_mrad": 43.2545263880952,
+  "detection": 0.9984375
+ },
+ "n8_K160_s0_sdr-default_i640": {
+  "rms_mrad": 36.86715153716548,
+  "bias_mrad": 4.959827701809303,
+  "wander_mrad": 36.53178169433171,
+  "detection": 0.9984375
+ },
+ "n8_K160_s1_sdr-default_i640": {
+  "rms_mrad": 66.46722476741034,
+  "bias_mrad": 1.5462118320312817,
+  "wander_mrad": 66.44539398017923,
+  "detection": 0.9984375
+ },
+ "n8_K160_s2_sdr-default_i640": {
+  "rms_mrad": 33.888359329854836,
+  "bias_mrad": 6.253625377913635,
+  "wander_mrad": 33.30625278820584,
+  "detection": 0.9984375
+ },
+ "n12_K160_s0_sdr-default_i640": {
+  "rms_mrad": 36.385875972002374,
+  "bias_mrad": 17.29864118945223,
+  "wander_mrad": 32.011608257507945,
+  "detection": 0.9984375
+ },
+ "n12_K160_s1_sdr-default_i640": {
+  "rms_mrad": 64.6481880524342,
+  "bias_mrad": 10.693110486353804,
+  "wander_mrad": 63.76151282721511,
+  "detection": 0.9984375
+ },
+ "n12_K160_s2_sdr-default_i640": {
+  "rms_mrad": 28.254641508885868,
+  "bias_mrad": 5.037318976562405,
+  "wander_mrad": 27.801500712518024,
+  "detection": 0.9984375
+ },
+ "n20_K160_s0_sdr-default_i640": {
+  "rms_mrad": 28.171001396250606,
+  "bias_mrad": 5.379341554411663,
+  "wander_mrad": 27.652577046310256,
+  "detection": 0.9984375
+ },
+ "n20_K160_s1_sdr-default_i640": {
+  "rms_mrad": 59.33750510410942,
+  "bias_mrad": 4.685974435981743,
+  "wander_mrad": 59.15298476725877,
+  "detection": 0.9984375
+ },
+ "n20_K160_s2_sdr-default_i640": {
+  "rms_mrad": 22.21281532903236,
+  "bias_mrad": 4.6412629908467045,
+  "wander_mrad": 21.72239908677321,
+  "detection": 0.9984375
+ },
+ "n1_K40_s0_tcxo_i160": {
+  "rms_mrad": 258.71691473884226,
+  "bias_mrad": 45.57695426173787,
+  "wander_mrad": 254.9806597112929,
+  "detection": 0.99375
+ },
+ "n1_K40_s1_tcxo_i160": {
+  "rms_mrad": 281.0118203231646,
+  "bias_mrad": 29.074896067915674,
+  "wander_mrad": 279.04368082991607,
+  "detection": 0.99375
+ },
+ "n1_K40_s2_tcxo_i160": {
+  "rms_mrad": 246.27106377609988,
+  "bias_mrad": 15.487158371792114,
+  "wander_mrad": 245.67989614231922,
+  "detection": 0.99375
+ },
+ "n2_K40_s0_tcxo_i160": {
+  "rms_mrad": 175.84097041921677,
+  "bias_mrad": 16.540179747341433,
+  "wander_mrad": 175.13938433578784,
+  "detection": 0.99375
+ },
+ "n2_K40_s1_tcxo_i160": {
+  "rms_mrad": 177.73220153655606,
+  "bias_mrad": 0.17959800905129847,
+  "wander_mrad": 177.7718334669144,
+  "detection": 0.99375
+ },
+ "n2_K40_s2_tcxo_i160": {
+  "rms_mrad": 190.25763424389453,
+  "bias_mrad": 18.161303721371063,
+  "wander_mrad": 189.28892157454885,
+  "detection": 0.99375
+ },
+ "n3_K40_s0_tcxo_i160": {
+  "rms_mrad": 156.14694647726006,
+  "bias_mrad": 6.442423231236297,
+  "wander_mrad": 155.95302184215947,
+  "detection": 0.99375
+ },
+ "n3_K40_s1_tcxo_i160": {
+  "rms_mrad": 154.7213801113042,
+  "bias_mrad": 5.751326793108869,
+  "wander_mrad": 154.6498114145939,
+  "detection": 0.99375
+ },
+ "n3_K40_s2_tcxo_i160": {
+  "rms_mrad": 155.38577819622006,
+  "bias_mrad": 4.8390012038971495,
+  "wander_mrad": 155.34642304032826,
+  "detection": 0.99375
+ },
+ "n5_K40_s0_tcxo_i160": {
+  "rms_mrad": 110.31447451450605,
+  "bias_mrad": 14.122419874032126,
+  "wander_mrad": 109.40036772109335,
+  "detection": 0.99375
+ },
+ "n5_K40_s1_tcxo_i160": {
+  "rms_mrad": 123.3534225095177,
+  "bias_mrad": 18.860710329337003,
+  "wander_mrad": 121.90756810486197,
+  "detection": 0.99375
+ },
+ "n5_K40_s2_tcxo_i160": {
+  "rms_mrad": 112.56272977956085,
+  "bias_mrad": 24.77573614129083,
+  "wander_mrad": 109.79356372641054,
+  "detection": 0.99375
+ },
+ "n8_K40_s0_tcxo_i160": {
+  "rms_mrad": 94.7281789591377,
+  "bias_mrad": 34.66150438570028,
+  "wander_mrad": 88.1680689587558,
+  "detection": 0.99375
+ },
+ "n8_K40_s1_tcxo_i160": {
+  "rms_mrad": 105.11207467581612,
+  "bias_mrad": 15.235240045688343,
+  "wander_mrad": 104.00651634619678,
+  "detection": 0.99375
+ },
+ "n8_K40_s2_tcxo_i160": {
+  "rms_mrad": 85.34244868262526,
+  "bias_mrad": 3.72842769168194,
+  "wander_mrad": 85.26236148017158,
+  "detection": 0.99375
+ },
+ "n12_K40_s0_tcxo_i160": {
+  "rms_mrad": 71.62721854227286,
+  "bias_mrad": 3.639442989136354,
+  "wander_mrad": 71.53820777902007,
+  "detection": 0.99375
+ },
+ "n12_K40_s1_tcxo_i160": {
+  "rms_mrad": 89.21635629107774,
+  "bias_mrad": 21.587935180314712,
+  "wander_mrad": 86.58137662691105,
+  "detection": 0.99375
+ },
+ "n12_K40_s2_tcxo_i160": {
+  "rms_mrad": 60.74782485878891,
+  "bias_mrad": 3.7927037871975435,
+  "wander_mrad": 60.629792623202015,
+  "detection": 0.99375
+ },
+ "n20_K40_s0_tcxo_i160": {
+  "rms_mrad": 54.937526447880046,
+  "bias_mrad": 17.07506988273952,
+  "wander_mrad": 52.21577537841683,
+  "detection": 0.99375
+ },
+ "n20_K40_s1_tcxo_i160": {
+  "rms_mrad": 79.37237250084225,
+  "bias_mrad": 23.285797937365068,
+  "wander_mrad": 75.88779305758341,
+  "detection": 0.99375
+ },
+ "n20_K40_s2_tcxo_i160": {
+  "rms_mrad": 50.46755044576924,
+  "bias_mrad": 1.815034408038254,
+  "wander_mrad": 50.43595441510257,
+  "detection": 0.99375
+ }
+}

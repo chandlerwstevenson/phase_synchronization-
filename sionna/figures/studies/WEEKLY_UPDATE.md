@@ -9,6 +9,20 @@ yet. Supporting detail: `THEORY.md` (derivations),
 
 ---
 
+**Correction notice (2026-08-24).** Where this document attributes a
+~100–153 mrad per-exchange noise floor to *multipath resampling*, the
+magnitude is real but the mechanism is wrong: frozen-oscillator
+controls show sample-timing jitter over frozen multipath contributes
+< 0.05 mrad. That floor is unmodeled **oscillator** noise
+(class-proportional ≈28/130/650 mrad for oven-controlled/
+temperature-compensated/cheap oscillators; flicker frequency noise
+modeled as white is the suspect). A genuine but smaller channel
+mechanism does exist — clock-offset-induced *fractional* resampling,
+10–25 mrad, conditionally white — with a validated zero-fit predictor.
+No measured result in this document changes; the filter-overconfidence
+finding stands with the corrected explanation. Detail:
+`../../phase_sync_idea/RESULTS_DOMINANCE.md` and `resampling_law.py`.
+
 ## 1. Summary
 
 This period produced four main results and one negative result:
@@ -230,9 +244,12 @@ every K intervals that re-pin the split. Results:
   airtime.
 - Boundaries with mechanisms: environmental motion ≥ 0.2 m/s breaks
   it (anchors must match the environment's coherence time; at K = 1
-  the cost equals plain two-way); free observations have an
-  interior-optimal rate (beyond it, a locked θ/φ_c misattribution
-  bias grows — ~205 mrad at 10 obs/interval, K = 40).
+  the cost equals plain two-way). *Corrected 2026-08-18:* the
+  previously reported interior-optimal observation rate was an
+  acquisition transient in anchor-starved runs; in steady state,
+  free observations are monotonically beneficial (≈ n^(−1/2) toward
+  a ~37–45 mrad floor) and anchors can be arbitrarily sparse
+  provided ~4 have occurred since acquisition.
 
 ### 4.5 SNR dependence and pilot length (the assigned question)
 

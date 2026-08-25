@@ -56,9 +56,17 @@ Relevant prior work includes Mudumbai's 1-bit feedback beamforming work and Qin 
 
 **Result.** The original observation was caused by noise in seed 0. Across seeds 0–2, scheduled synchronization increased from 192 to 208 mrad while uniform synchronization increased from 117 to 128 mrad; both changes were only about 8–9%.
 
-The dominant bias was white per-capture multipath resampling noise, about 100 mrad RMS, rather than Jakes channel decorrelation. The structure function was flat, and the Jakes prediction of 145 mrad at a one-interval gap was not observed; the measured value was 101 mrad.
+**CORRECTION (2026-08-24): the attribution in this paragraph is wrong — see the correction block at the end of this section.** The dominant bias was white per-capture multipath resampling noise, about 100 mrad RMS, rather than Jakes channel decorrelation. The structure function was flat, and the Jakes prediction of 145 mrad at a one-interval gap was not observed; the measured value was 101 mrad.
 
 The useful result is that resampling noise, rather than oscillator drift, appears to dominate the star's error floor under these conditions. This gives a possible additional term for the error-floor analysis. On NLOS TDL-A, the trend also reverses: motion can improve uniform synchronization.
+
+**CORRECTION (2026-08-24).** The two paragraphs above are right that the ~100 mrad per-exchange excess is real, flat in service gap, and not Jakes decorrelation. Their *attribution* to multipath resampling is wrong, established by controls run later:
+
+- With oscillators frozen, toggling sample-timing jitter over frozen multipath changes the two-way measurement by **< 0.05 mrad**. The discrete channel is shift-invariant and the correlator recovers integer sample shifts exactly, so the proposed mechanism cannot produce the observed magnitude at any jitter setting.
+- A related mechanism does exist and was derived and validated: *clock-offset-induced fractional* resampling, worth **10–25 mrad** at 1 MHz bandwidth (independent of delay spread over 30–1000 ns), with saturation set by the delay-*separated* diffuse power rather than the total diffuse fraction. It is **conditionally** white: strongly correlated (lag-1 up to +0.95) at realistic clock offsets, white only once the per-exchange alignment step exceeds the waveform's ambiguity width.
+- The ~100–130 mrad excess is instead **unmodeled oscillator noise**: it scales with oscillator class (≈28 / 130 / 650 mrad for oven-controlled / temperature-compensated / cheap oscillators) and is independent of channel model, signal-to-noise ratio, and jitter. Flicker frequency noise being modeled as white is the prime suspect. The apparent agreement between 153 mrad and the channel's diffuse-power estimate was a numerical coincidence.
+
+Consequences elsewhere in this document: the overconfidence factor in §5 is real and measured, but its *explanation* is the oscillator-noise misspecification above (the √(b²+σ²)/b form remains a good approximation at small phase budgets and degrades at mid budgets); the flat-in-signal-to-noise conclusion in `SNR_LAW.md` is unaffected in substance, since the term that swamps thermal noise is now the oscillator floor rather than a channel floor. Sources: `../../phase_sync_idea/RESULTS_DOMINANCE.md`, `resampling_law.py`, `RESULTS_reversal.md`.
 
 ## 5. Ex-ante coast-time law
 
@@ -140,7 +148,7 @@ For N=6, the worst-station residual was 63.2±14 mrad, with 99.86% gain at 2.39%
 
 There are clear limits. The reference needs to be within roughly 10–15 dB of the direct path. In a moving environment at 0.2–0.5 m/s, the benefit disappears and K=1 anchors are needed, bringing the cost back to the full two-way case.
 
-There is also an observation-rate tradeoff. More free observations are not always better. At n=10 observations per interval, a persistent ~205 mrad oscillator/channel misattribution bias develops between sparse anchors. In this regime, adding more free pilots makes the estimate worse.
+**Correction (2026-08-18, `interior_optimum_study.py`):** an earlier version of this section reported an interior-optimal observation rate (a ~205 mrad misattribution bias at n=10 observations per interval). Rigorous re-measurement with run lengths scaled to ≥4 anchor cycles per cell showed that result was an acquisition transient in anchor-starved runs (60 intervals gave K=40 only two anchors ever). In steady state, free observations are monotonically beneficial (residual improves ≈ n^(−1/2) toward a ~37–45 mrad floor over the full 126-cell grid), and anchors can be arbitrarily sparse (bias ~11 mrad even at one anchor per 8 s) provided roughly four anchors have occurred since acquisition. The design rule is a convergence requirement on anchor count, not a ceiling on observation rate.
 
 ## 9. Hybrid two-tier combiner ("demote, don't discard")
 

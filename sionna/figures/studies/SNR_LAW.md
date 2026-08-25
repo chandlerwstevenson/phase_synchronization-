@@ -14,6 +14,20 @@ low SNR, and a pilot-shortening lever at high SNR that converts SNR
 directly into airtime savings. Both the flat middle and the cliff are
 confirmed by measurement (table below).**
 
+**Correction (2026-08-24) — conclusions unchanged, one label wrong.**
+Throughout this file, σ_rs is called a "multipath resampling floor."
+Later controls showed that term is mostly *oscillator* noise
+(class-proportional ≈28/130/650 mrad for oven-controlled/
+temperature-compensated/cheap oscillators, independent of channel,
+signal-to-noise ratio, and timing jitter), with only 10–25 mrad
+attributable to a genuine — and conditionally white —
+clock-offset-induced fractional resampling effect. Every conclusion
+below survives unchanged, because what matters to the argument is that
+*some* signal-to-noise-independent floor swamps thermal noise; it is
+the oscillator floor, not a channel floor. Read "σ_rs" as
+"signal-to-noise-independent measurement floor." Detail:
+`../../phase_sync_idea/RESULTS_DOMINANCE.md`.
+
 All symbols: T = sync interval (50 ms), f_s = sample rate (1 MHz),
 L = pilot length in samples, L_lat = correction latency in intervals,
 b = phase budget (rad), q_θ = per-interval phase process variance

@@ -1,0 +1,25 @@
+== exp3: size scaling, chains and rings, sizes [8, 16, 32, 64], seeds [0, 1, 2] ==
+  chain N= 8 seed 0: far-pair std   143.7 mrad (first half   190.5), near-pair  144.9, wall 1s
+  chain N= 8 seed 1: far-pair std    92.0 mrad (first half    97.3), near-pair  104.5, wall 1s
+  chain N= 8 seed 2: far-pair std   173.9 mrad (first half   172.3), near-pair   87.7, wall 1s
+  chain N=16 seed 0: far-pair std    79.1 mrad (first half   196.5), near-pair   94.0, wall 4s
+  chain N=16 seed 1: far-pair std   117.8 mrad (first half   162.7), near-pair  109.2, wall 5s
+  chain N=16 seed 2: far-pair std   546.7 mrad (first half   165.1), near-pair  157.7, wall 5s
+  chain N=32 seed 0: far-pair std   727.8 mrad (first half   739.2), near-pair  114.7, wall 19s
+  chain N=32 seed 1: far-pair std   672.4 mrad (first half   996.2), near-pair   95.1, wall 19s
+  chain N=32 seed 2: far-pair std   997.8 mrad (first half   830.8), near-pair  190.3, wall 19s
+  chain N=64 seed 0: far-pair std  2452.3 mrad (first half  2372.6), near-pair  165.1, wall 76s
+  chain N=64 seed 1: far-pair std  2463.8 mrad (first half  1905.3), near-pair  203.4, wall 76s
+  chain N=64 seed 2: far-pair std   444.4 mrad (first half  1756.0), near-pair  153.0, wall 76s
+  ring  N= 8 seed 0: far-pair std    76.3 mrad (first half    88.4), near-pair   56.9, wall 1s
+  ring  N= 8 seed 1: far-pair std   140.2 mrad (first half    84.5), near-pair  116.4, wall 1s
+  ring  N= 8 seed 2: far-pair std   151.0 mrad (first half    61.1), near-pair  110.5, wall 1s
+  ring  N=16 seed 0: far-pair std   227.2 mrad (first half   104.1), near-pair  108.3, wall 5s
+  ring  N=16 seed 1: far-pair std   265.9 mrad (first half   182.4), near-pair  156.4, wall 5s
+  ring  N=16 seed 2: far-pair std   192.0 mrad (first half   172.6), near-pair  107.7, wall 5s
+  ring  N=32 seed 0: far-pair std   734.2 mrad (first half   210.6), near-pair  251.7, wall 20s
+  ring  N=32 seed 1: far-pair std   442.3 mrad (first half   769.1), near-pair  192.5, wall 20s
+  ring  N=32 seed 2: far-pair std   783.8 mrad (first half   195.9), near-pair  123.4, wall 20s
+  ring  N=64 seed 0: far-pair std   734.0 mrad (first half   830.1), near-pair  292.4, wall 78s
+  ring  N=64 seed 1: far-pair std  2091.8 mrad (first half   584.8), near-pair  182.7, wall 77s
+  ring  N=64 seed 2: far-pair std   798.7 mrad (first half   634.7), near-pair  447.8, wall 80s

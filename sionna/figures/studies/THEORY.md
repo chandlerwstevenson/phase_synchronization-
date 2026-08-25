@@ -102,7 +102,8 @@ posterior-explicit form with the DARE-computed σ_ω⁺, not that delay
 matters at all.)
 
 A fourth, initially unmodeled contributor was found by measurement:
-**multipath resampling noise** — each capture's timing jitter
+**[SUPERSEDED 2026-08-24 — see the correction after this paragraph]**
+multipath resampling noise — each capture's timing jitter
 re-samples the frozen multipath composite, adding white per-exchange
 phase noise of ~90–100 mrad (per link, independent of N and of the
 service gap; confirmed by a flat structure function). It explains the
@@ -110,6 +111,34 @@ filter's measured overconfidence: the true residual at service exceeds
 the filter's threshold by the factor √(threshold² + σ_rs²)/threshold
 with σ_rs ≈ 153 mrad on this channel — with no fitted constants (a
 1/(2K) Rice-factor estimate supplies σ_rs).
+
+**Correction (2026-08-24).** The magnitude and flatness above are
+measured facts; the mechanism is not. Frozen-oscillator controls show
+sample-timing jitter over frozen multipath moves the two-way
+measurement by < 0.05 mrad — the discrete channel is shift-invariant
+and the correlator recovers integer shifts exactly. The correct
+decomposition of that fourth contributor is:
+
+    σ_extra²  =  σ_frac²(clock offset, delay-separated diffuse power)
+                    ~ (10-25 mrad)², conditionally white
+              +  σ_osc,unmodeled²(oscillator class)
+                    ~ (28 / 130 / 650 mrad)² for ocxo / tcxo / sdr
+
+The first term is a real, derived mechanism — the sample clock slides
+*fractionally* through the multipath between exchanges whenever the
+oscillators differ in rate — with an exact zero-fit predictor, but it
+saturates at the *delay-separated* diffuse fraction (echoes co-located
+with the line-of-sight peak move with it and cancel), giving 10–25 mrad
+at 1 MHz bandwidth regardless of delay spread, and it is white only
+when the per-exchange alignment step exceeds the waveform's ambiguity
+width (otherwise strongly correlated, lag-1 up to +0.95). The second
+term dominates and is *not* a channel effect at all: it is
+class-proportional, channel-, signal-to-noise- and jitter-independent,
+with flicker frequency noise modeled as white the prime suspect. The
+overconfidence factor √(b² + σ²)/b therefore remains a useful
+approximation (good at small phase budgets, degrading at mid budgets)
+but its σ is oscillator-derived, not the Rice-factor estimate — that
+numerical agreement was coincidental.
 
 The candidate *motion* term did not survive: the proposed
 channel-decorrelation contribution 2σ_c²(1 − J₀(2π f_D τ)) (Jakes
@@ -272,11 +301,18 @@ in N (one transmission serves all listeners).
 Boundaries, with their math: (i) the scheme inherits the environment's
 coherence *time* — if the taps decorrelate (motion), φ_path is no
 longer constant and anchors must come as fast as the environment
-changes (at K = 1 the cost equals plain two-way); (ii) there is an
-*interior-optimal* observation rate — more free observations force
-the filter to attribute more of what it sees, and with anchors too
-sparse the θ/φ_c split accumulates a locked misattribution bias
-(~205 mrad measured at 10 observations/interval, K = 40); (iii) the
+changes (at K = 1 the cost equals plain two-way); (ii) the θ/φ_c
+split must *converge* before anchors can be sparse — the split
+estimate needs roughly four anchors after acquisition, and until
+then a high observation rate locks the sum tightly and exposes the
+whole split error as a phase bias (an earlier version of this
+section reported this as an interior-optimal observation rate; the
+corrected steady-state measurement, `interior_optimum_study.py`, is
+monotone: more free observations always help, ≈ n^(−1/2), and the
+per-observation leakage into the channel state scales as
+√(q_ψ/(n·r)), making the accumulated split wander n-independent —
+the ideal filter predicts no interior optimum and the corrected
+measurement agrees); (iii) the
 observation is aliased against the substep spacing — a frequency
 offset that is an integer number of cycles per substep looks
 stationary (this produced the N-scaling artifact; the mitigation is
