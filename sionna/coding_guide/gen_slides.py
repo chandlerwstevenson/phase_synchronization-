@@ -133,6 +133,11 @@ PART2_INTRO = r"""
       and assess their performance''} $\Rightarrow$ the waveform
       section: counted frequency and delay accuracy for both.
   \end{enumerate}
+  \vspace{0.3em}
+  And the meeting's third pillar --- all of this \emph{for the
+  purpose of passive target detection and localization} --- closes
+  the part: four stations localize a drone, measured against the
+  Cram\'er--Rao bound.
 \end{frame}
 
 \begin{frame}{Part II --- practical note}
@@ -387,6 +392,11 @@ def main() -> None:
         "waveforms (300 trials, 10 dB, 5 kHz offset):\n"
         "  ofdm  cfo rms   2340.9 Hz | delay rms  0.0 samples (0 m)\n"
         "  tone  cfo rms   7108.6 Hz | delay rms  2.8 samples (21 m)\n"
+        "localization of the drone (200 trials, 4 stations):\n"
+        "  per-station range bound : 21.2 cm\n"
+        "  x: bias  -0.318 m  spread  0.163 m  | bound  0.136 m\n"
+        "  y: bias  +0.245 m  spread  0.244 m  | bound  0.176 m\n"
+        "  z: bias  +3.441 m  spread  0.507 m  | bound  0.427 m\n"
         "\\end{lstlisting}\n"
         "\\end{frame}\n"
     )

@@ -549,6 +549,244 @@ def compare_waveforms(params: BaseStationParams, trials=300,
               f"({delay_rms * ts * SPEED_OF_LIGHT / 2.0:.0f} m)")
 
 
+# %% SECTION: Localization: from ranges to a position
+# %% NOTE: The ghost-range result begs the next step: more stations.
+# %% NOTE: Four base stations at the corners of the area each run
+# %% NOTE: the monostatic measurement on the same \textbf{drone}
+# %% NOTE: (radar cross-section 0.03\,m$^2$, hovering at 60\,m).
+# %% NOTE: Each station's round-trip delay gives one range -- a
+# %% NOTE: sphere the drone must sit on -- and four spheres pin the
+# %% NOTE: position. One ray-tracer solve supplies all four legs
+# %% NOTE: (ground bounce included); the position solver is
+# %% NOTE: Gauss--Newton: linearize each range around the current
+# %% NOTE: guess (the gradient of $\|p - s_i\|$ is the unit vector
+# %% NOTE: from station to drone), solve the little least-squares
+# %% NOTE: problem, step, repeat.
+DRONE = np.array([170.0, 90.0, 60.0])
+DRONE_RCS_M2 = 0.03
+STATIONS = np.array([[0.0, 0.0, 15.0], [300.0, 0.0, 15.0],
+                     [0.0, 200.0, 15.0], [300.0, 200.0, 15.0]])
+
+
+def localization_legs(params: BaseStationParams):
+    """One RT solve, four stations -> drone: [(gains, delays)]."""
+    import sionna.rt as rt
+
+    scene = rt.load_scene()
+    scene.frequency = params.carrier_frequency_hz
+    scene.tx_array = rt.PlanarArray(num_rows=1, num_cols=1,
+                                    pattern="iso", polarization="V")
+    scene.rx_array = scene.tx_array
+    handle = tempfile.NamedTemporaryFile("w", suffix=".ply",
+                                         delete=False)
+    handle.write(_ply_ground(800.0))
+    handle.close()
+    try:
+        scene.edit(add=rt.SceneObject(
+            fname=handle.name, name="ground-plane",
+            radio_material=rt.RadioMaterial(
+                "ground", thickness=10.0,
+                relative_permittivity=15.0, conductivity=0.035)))
+    finally:
+        os.unlink(handle.name)
+    for index, station in enumerate(STATIONS):
+        scene.add(rt.Transmitter(f"bs-{index}",
+                                 position=station.tolist()))
+    scene.add(rt.Receiver("drone", position=DRONE.tolist()))
+    paths = rt.PathSolver()(scene, max_depth=3, los=True,
+                            specular_reflection=True,
+                            diffuse_reflection=False,
+                            refraction=False)
+    a, tau = paths.cir(normalize_delays=False, out_type="numpy")
+    legs = []
+    for index in range(len(STATIONS)):
+        gains = a[0, 0, index, 0, :, 0]
+        delays = tau[0, index, :]
+        keep = delays >= 0.0          # padded slots carry tau = -1
+        legs.append((gains[keep], delays[keep]))
+    return legs
+
+
+def measure_range(params: BaseStationParams, burst,
+                  gains, delays, upsample=16):
+    """One noisy monostatic range measurement from one station.
+
+    The peak search runs on a 16x frequency-domain upsampled
+    cross-correlation: the coarse three-point parabola on the raw
+    sample grid leaves a bias worth several times the noise floor,
+    and an estimator meant to be compared against the Cramer-Rao
+    bound has to earn it.
+    """
+    ts = params.sample_period_s
+    amp_gain = 10.0 ** (params.antenna_gain_dbi / 20.0)
+    rcs_factor = (math.sqrt(4.0 * math.pi * DRONE_RCS_M2)
+                  / params.wavelength_m)
+    total = burst.size + 2048
+    echo = np.zeros(total, complex)
+    for p in range(gains.size):
+        for q in range(gains.size):
+            amplitude = (math.sqrt(params.tx_power_w) * amp_gain**2
+                         * gains[p] * gains[q] * rcs_factor)
+            echo += amplitude * fractional_delay(
+                burst, (delays[p] + delays[q]) / ts, total)
+    sigma = math.sqrt(params.noise_power_w / 2.0)
+    rx = echo + sigma * (rng.standard_normal(total)
+                         + 1j * rng.standard_normal(total))
+    spectrum = np.fft.fft(rx) * np.conj(np.fft.fft(burst, total))
+    padded = np.zeros(total * upsample, complex)
+    padded[: total // 2] = spectrum[: total // 2]
+    padded[-total // 2 :] = spectrum[-total // 2 :]
+    cc = np.abs(np.fft.ifft(padded)) ** 2
+    search = cc[: (total - burst.size) * upsample]
+    peak = int(np.argmax(search))
+    num = cc[peak - 1] - cc[peak + 1]
+    den = cc[peak - 1] - 2 * cc[peak] + cc[peak + 1]
+    peak = peak + 0.5 * num / den
+    return peak / upsample * ts * SPEED_OF_LIGHT / 2.0, echo
+
+
+def solve_position(ranges, stations, initial):
+    """Gauss-Newton: least-squares position from station ranges.
+
+    The initial guess must sit OFF the stations' common plane:
+    every look direction's vertical component is zero there, so the
+    plane is a stationary point the iteration can never leave --
+    found the hard way (the solver returned z = 15 m forever).
+    """
+    position = initial.copy()
+    for _ in range(20):
+        vectors = position - stations
+        distances = np.linalg.norm(vectors, axis=1)
+        jacobian = vectors / distances[:, None]
+        residual = ranges - distances
+        step, *_ = np.linalg.lstsq(jacobian, residual, rcond=None)
+        position = position + step
+        if np.linalg.norm(step) < 1e-6:
+            break
+    return position
+
+
+# %% SECTION: The Cramer-Rao bound
+# %% NOTE: How good could ANY unbiased estimator possibly be? That
+# %% NOTE: is the Cramer--Rao bound, and both layers of it are
+# %% NOTE: computable from things already in hand. \textbf{Per
+# %% NOTE: station (delay):} $\mathrm{var}(\hat\tau) \geq 1 / (8
+# %% NOTE: \pi^2 \beta^2 \cdot E/N_0)$, where $\beta$ is the
+# %% NOTE: waveform's rms bandwidth and $E/N_0$ the received echo
+# %% NOTE: energy over the noise density -- bandwidth and energy are
+# %% NOTE: the only two currencies delay accuracy trades in (the
+# %% NOTE: single tone fails exactly here: $\beta \approx 0$).
+# %% NOTE: Monostatic ranging halves the delay error into range:
+# %% NOTE: $r = c\tau/2$. \textbf{Position:} each station
+# %% NOTE: contributes information only ALONG its look direction
+# %% NOTE: $u_i$; the Fisher information matrix is $J = \sum_i u_i
+# %% NOTE: u_i^T / \sigma_{r_i}^2$ and $J^{-1}$ lower-bounds the
+# %% NOTE: position covariance. Geometry enters through the $u_i$:
+# %% NOTE: directions the stations do not span are directions the
+# %% NOTE: network cannot measure -- watch the vertical axis.
+def rms_bandwidth_hz(burst, sample_rate):
+    spectrum = np.abs(np.fft.fft(burst)) ** 2
+    freq = np.fft.fftfreq(burst.size, 1.0 / sample_rate)
+    center = np.sum(freq * spectrum) / np.sum(spectrum)
+    return math.sqrt(np.sum((freq - center) ** 2 * spectrum)
+                     / np.sum(spectrum))
+
+
+def range_crb_m(params: BaseStationParams, burst, echo):
+    """Per-station range standard-deviation bound (meters)."""
+    beta = rms_bandwidth_hz(burst, params.bandwidth_hz)
+    # E/N0: echo energy over noise density, in sample units.
+    energy_over_n0 = np.sum(np.abs(echo) ** 2) / params.noise_power_w
+    var_tau = 1.0 / (8.0 * math.pi**2 * beta**2 * energy_over_n0)
+    return (SPEED_OF_LIGHT / 2.0) * math.sqrt(var_tau)
+
+
+def position_bound(stations, drone, range_sigmas):
+    """Cramer-Rao covariance for the position (3x3)."""
+    vectors = drone - stations
+    units = vectors / np.linalg.norm(vectors, axis=1)[:, None]
+    fisher = np.zeros((3, 3))
+    for u, sigma in zip(units, range_sigmas):
+        fisher += np.outer(u, u) / sigma**2
+    return np.linalg.inv(fisher)
+
+
+# %% SECTION: Localize the drone, and check against the bound
+# %% NOTE: 200 full trials: four noisy matched-filter ranges, one
+# %% NOTE: Gauss--Newton solve each; then measured error next to
+# %% NOTE: the bound, axis by axis. Measured: per-station range
+# %% NOTE: bound 21\,cm; position \textbf{spread} x/y/z =
+# %% NOTE: 0.16/0.25/0.49\,m against bounds 0.14/0.18/0.43\,m --
+# %% NOTE: the estimator runs within 20--40\% of the theoretical
+# %% NOTE: limit on every axis. Two lessons in those numbers.
+# %% NOTE: \textbf{Geometry}: the vertical bound is 3$\times$ the
+# %% NOTE: horizontal ones before a single trial runs -- all four
+# %% NOTE: stations sit below the drone in nearly a plane, so their
+# %% NOTE: look directions barely span the vertical. \textbf{Bias
+# %% NOTE: is not spread}: on top of the spread sits a systematic
+# %% NOTE: error (x $-0.34$, y $+0.24$, z $+3.4$\,m) from the
+# %% NOTE: ground-bounce path fusing with the direct one inside the
+# %% NOTE: resolution cell. The bound only governs an unbiased
+# %% NOTE: estimator's spread; multipath is a modeling error, it
+# %% NOTE: does not average away, and the weak axis amplifies it --
+# %% NOTE: the same lesson as the ghost target, in miniature.
+# %% IMAGE: figures/localization_scatter.png | 200 position estimates (horizontal plane), the true position (+), and the bound's 3-sigma ellipse. The cloud's SIZE matches the ellipse -- the spread is near the bound -- but the cloud sits displaced from the truth: that offset is the multipath bias, and no amount of averaging shrinks it.
+def localization_study(params: BaseStationParams, trials=200,
+                       out_dir="figures"):
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    burst = make_ofdm_burst(params)
+    legs = localization_legs(params)
+    initial = np.array([150.0, 100.0, 120.0])  # off the plane!
+
+    # Per-station bounds from one clean echo each.
+    sigmas = []
+    for gains, delays in legs:
+        _, echo = measure_range(params, burst, gains, delays)
+        sigmas.append(range_crb_m(params, burst, echo))
+    bound = position_bound(STATIONS, DRONE, sigmas)
+
+    estimates = []
+    for _ in range(trials):
+        ranges = np.array([
+            measure_range(params, burst, gains, delays)[0]
+            for gains, delays in legs])
+        estimates.append(solve_position(ranges, STATIONS, initial))
+    estimates = np.array(estimates)
+    errors = estimates - DRONE
+
+    print("localization of the drone (200 trials, 4 stations):")
+    print(f"  per-station range bound : "
+          f"{np.mean(sigmas)*100:.1f} cm")
+    # The bound limits the SPREAD of an unbiased estimator; the
+    # multipath bias is a separate, systematic effect -- report both.
+    for axis, name in enumerate("xyz"):
+        print(f"  {name}: bias {np.mean(errors[:, axis]):+7.3f} m"
+              f"  spread {np.std(errors[:, axis]):6.3f} m"
+              f"  | bound {math.sqrt(bound[axis, axis]):6.3f} m")
+
+    # Scatter in the horizontal plane with the 3-sigma ellipse.
+    os.makedirs(out_dir, exist_ok=True)
+    fig, axis = plt.subplots(figsize=(6, 5))
+    axis.scatter(estimates[:, 0], estimates[:, 1], s=6)
+    values, directions = np.linalg.eigh(bound[:2, :2])
+    angle = np.linspace(0.0, 2.0 * np.pi, 200)
+    circle = np.stack([np.cos(angle), np.sin(angle)])
+    ellipse = (directions
+               @ np.diag(3.0 * np.sqrt(values)) @ circle)
+    axis.plot(DRONE[0] + ellipse[0], DRONE[1] + ellipse[1], "C3")
+    axis.plot(DRONE[0], DRONE[1], "k+")
+    axis.set_xlabel("x (m)")
+    axis.set_ylabel("y (m)")
+    axis.set_aspect("equal")
+    fig.tight_layout()
+    fig.savefig(os.path.join(out_dir, "localization_scatter.png"),
+                dpi=150)
+    return sigmas, bound, errors
+
+
 # %% SECTION: Run Part II
 # %% NOTE: Everything measured in one run (exact output below the
 # %% NOTE: code). Training fields: 500/500 exact timing, 1.03\,kHz
@@ -596,6 +834,8 @@ if __name__ == "__main__":
 
     print("waveforms (300 trials, 10 dB, 5 kHz offset):")
     compare_waveforms(params)
+
+    localization_study(params)
 
     print("rendering scenes and range profiles into figures/ ...")
     render_scenes(params)
