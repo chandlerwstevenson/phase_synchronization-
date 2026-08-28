@@ -1992,30 +1992,42 @@ final freq error   : -0.010 Hz
 
 
 
-\begin{frame}{Part II --- sensing: what you build next}
-  A second file, \texttt{build\_sensing.py}, same rules: the
+\begin{frame}{Part II --- the action items from the last meeting}
+  Part II is the agreed work for the next meeting, item by item. A
+  second file, \texttt{build\_sensing.py}, same rules as Part I: the
   snippets, typed in order, are the complete file; every number on
-  these slides is the measured output of running it. This part
-  covers the next round of project work:
+  these slides is its measured output.
   \begin{enumerate}
-    \item \textbf{Realistic base-station parameters} --- 3.5\,GHz
-      carrier, 20\,MHz bandwidth, 10\,W, real noise floor.
-    \item \textbf{Short/long training fields from the ground up} ---
-      timing, frequency, and phase estimation at those parameters,
-      tested over 500 impaired trials.
-    \item \textbf{Monostatic sensing with one base station in
-      Sionna} --- the station listens for its own echo, in
-      line-of-sight and with a building in the way.
-    \item \textbf{OFDM versus a single tone} --- which measurement
-      each waveform can and cannot make.
+    \item \emph{``Implementing timing for LTF/STF for
+      frequency/phase estimation \ldots building it from the ground
+      up to get a better intuition''} $\Rightarrow$ the short
+      training field (STF) and long training field (LTF) sections:
+      preamble construction and the three-stage receiver, written
+      bare-handed and tested over 500 impaired trials.
+    \item \emph{``Implementing realistic parameters (carrier f, BW,
+      etc.) to model real base stations''} $\Rightarrow$ the
+      \texttt{BaseStationParams} section: 3.5\,GHz carrier, 20\,MHz
+      bandwidth, 10\,W, 8\,dBi, 7\,dB noise figure, and the
+      $-94$\,dBm floor they imply.
+    \item \emph{``For a single base station, monostatic sensing in
+      LOS and NLOS cases in Sionna''} $\Rightarrow$ the three
+      ray-traced scenes: line-of-sight, and two NLOS cases ---
+      fully blocked, and blocked with a reflected detour (the ghost
+      target).
+    \item \emph{``Compare OFDM waveforms to single tone waveforms
+      and assess their performance''} $\Rightarrow$ the waveform
+      section: counted frequency and delay accuracy for both.
   \end{enumerate}
-  \vspace{0.3em}
-  \footnotesize One practical note: the ray-traced sections need
-  Sionna's ray-tracing module. On this machine that lives in the
-  project environment --- run Part II with
+\end{frame}
+
+\begin{frame}{Part II --- practical note}
+  The ray-traced sections need Sionna's ray-tracing module. On this
+  machine that lives in the project environment --- run Part II
+  with\\[0.3em]
   \texttt{\textasciitilde/Downloads/Princeton\_Research/ota\_sync/}
-  \texttt{.venv/bin/python build\_sensing.py} (the training-field
-  and waveform sections run under any Python with numpy).
+  \texttt{.venv/bin/python build\_sensing.py}\\[0.3em]
+  The training-field and waveform sections run under any Python
+  with numpy.
 \end{frame}
 
 \begin{frame}{Part II file header}
