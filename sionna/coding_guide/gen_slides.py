@@ -397,6 +397,10 @@ def main() -> None:
         "  x: bias  -0.318 m  spread  0.163 m  | bound  0.136 m\n"
         "  y: bias  +0.245 m  spread  0.244 m  | bound  0.176 m\n"
         "  z: bias  +3.441 m  spread  0.507 m  | bound  0.427 m\n"
+        # TODO: the ghost study (ghost_study) was added after this
+        # block was last refreshed and needs a machine with Sionna
+        # to run. Paste its "ghosts (4 stations, built-up scene):"
+        # lines in here after the next `python3 build_sensing.py`.
         "\\end{lstlisting}\n"
         "\\end{frame}\n"
     )

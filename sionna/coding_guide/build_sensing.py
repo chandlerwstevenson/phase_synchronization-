@@ -1,7 +1,9 @@
 """Part II of the coding guide: realistic base-station parameters,
 short/long training fields built from the ground up, single-station
-monostatic sensing in Sionna (line-of-sight and blocked), and OFDM
-versus single-tone waveforms.
+monostatic sensing in Sionna (line-of-sight and blocked), OFDM
+versus single-tone waveforms, four-station localization against the
+Cramer-Rao bound, and -- with the target meshed into the scene as
+real geometry -- clutter, multipath and ghost targets.
 
 New code, written for this guide and tested; every measured number
 quoted on the slides comes from running this file:
@@ -11,6 +13,7 @@ quoted on the slides comes from running this file:
 
 from __future__ import annotations
 
+import itertools
 import math
 import os
 import tempfile
@@ -232,12 +235,20 @@ def test_training_fields(params: BaseStationParams, trials=500,
 # %% NOTE: simply does not appear in the list. The two helpers
 # %% NOTE: below write scene geometry (a ground plane, a box
 # %% NOTE: building) as PLY mesh files the scene loader accepts.
-def _ply_box(x, y, w, d, h):
+def _ply_box(x, y, w, d, h, z0=0.0):
     x0, x1, y0, y1 = x - w / 2, x + w / 2, y - d / 2, y + d / 2
-    v = [(x0, y0, 0), (x1, y0, 0), (x1, y1, 0), (x0, y1, 0),
-         (x0, y0, h), (x1, y0, h), (x1, y1, h), (x0, y1, h)]
+    v = [(x0, y0, z0), (x1, y0, z0), (x1, y1, z0), (x0, y1, z0),
+         (x0, y0, z0 + h), (x1, y0, z0 + h), (x1, y1, z0 + h),
+         (x0, y1, z0 + h)]
     f = [(0, 1, 5), (0, 5, 4), (1, 2, 6), (1, 6, 5), (2, 3, 7),
          (2, 7, 6), (3, 0, 4), (3, 4, 7), (4, 5, 6), (4, 6, 7)]
+    if z0 > 0.0:
+        # A box sitting on the ground needs no floor, and giving it
+        # one would put a face coplanar with the ground plane -- an
+        # invitation to z-fighting in the renderer and to degenerate
+        # intersections in the solver. A FLOATING box (a drone body)
+        # does need its underside, or it renders hollow from below.
+        f += [(0, 2, 1), (0, 3, 2)]
     lines = ["ply", "format ascii 1.0", f"element vertex {len(v)}",
              "property float x", "property float y",
              "property float z", f"element face {len(f)}",
@@ -257,6 +268,73 @@ def _ply_ground(half):
             "3 0 1 2\n3 0 2 3\n")
 
 
+def _add_mesh(rt, scene, name, ply, material):
+    """Write a PLY string to a temp file and add it to the scene."""
+    handle = tempfile.NamedTemporaryFile("w", suffix=".ply",
+                                         delete=False)
+    handle.write(ply)
+    handle.close()
+    try:
+        scene.edit(add=rt.SceneObject(fname=handle.name, name=name,
+                                      radio_material=material))
+    finally:
+        os.unlink(handle.name)
+
+
+def _materials(rt):
+    """Ground and concrete, colored so renders are readable."""
+    ground = rt.RadioMaterial("ground", thickness=10.0,
+                              relative_permittivity=15.0,
+                              conductivity=0.035,
+                              color=(0.55, 0.65, 0.45))
+    concrete = rt.RadioMaterial("concrete", thickness=0.3,
+                                relative_permittivity=5.24,
+                                conductivity=0.123,
+                                color=(0.72, 0.70, 0.66))
+    return ground, concrete
+
+
+def add_visual_markers(rt, scene, stations, targets, scale=12.0):
+    """Draw the radios as objects. VISUALIZATION ONLY.
+
+    Point transmitters and receivers render as bare colored dots with
+    no size, so a picture of them says nothing about the geometry --
+    how high the mast is, how far up the target sits, how big it is.
+    These meshes fix that: a pole under each antenna, and a body plus
+    a cross-arm at each target, drawn ENLARGED (a real drone is ~0.3 m
+    and would be one pixel at these ranges).
+
+    Call this AFTER the path solve. The markers are not physics: the
+    target enters the echo model as a point probe plus an analytic
+    radar cross-section, and a solid box sitting on the probe would
+    block the very paths the picture is meant to show.
+    """
+    steel = rt.RadioMaterial("mast-material", thickness=0.05,
+                             relative_permittivity=1.0,
+                             conductivity=1e7,
+                             color=(0.20, 0.25, 0.55))
+    red = rt.RadioMaterial("target-material", thickness=0.003,
+                           relative_permittivity=3.0,
+                           conductivity=1e-4,
+                           color=(0.85, 0.10, 0.10))
+    for index, station in enumerate(np.atleast_2d(stations)):
+        x, y, z = (float(v) for v in station)
+        _add_mesh(rt, scene, f"mast-{index}",
+                  _ply_box(x, y, 0.25 * scale, 0.25 * scale, z), steel)
+        _add_mesh(rt, scene, f"head-{index}",
+                  _ply_box(x, y, 0.6 * scale, 0.6 * scale,
+                           0.25 * scale, z0=z), steel)
+    for index, target in enumerate(np.atleast_2d(targets)):
+        x, y, z = (float(v) for v in target)
+        base = z - scale / 12.0
+        _add_mesh(rt, scene, f"target-body-{index}",
+                  _ply_box(x, y, scale, scale / 4.0, scale / 6.0,
+                           z0=base), red)
+        _add_mesh(rt, scene, f"target-cross-{index}",
+                  _ply_box(x, y, scale / 4.0, scale, scale / 6.0,
+                           z0=base), red)
+
+
 # %% SECTION: Monostatic sensing: three scenes
 # %% NOTE: One base station (mast at 15\,m), one passive target
 # %% NOTE: (40\,m altitude, 300\,m down-range), no cooperation: the
@@ -273,6 +351,10 @@ def _ply_ground(half):
 # %% NOTE: building row 80\,m to the side whose wall offers the
 # %% NOTE: solver a specular detour around the blocker -- the urban
 # %% NOTE: canyon situation).
+STATION = np.array([0.0, 0.0, 15.0])      # the mast
+TARGET = np.array([300.0, 0.0, 40.0])     # the passive target
+
+
 def monostatic_scene(params: BaseStationParams, scenario: str):
     """Build one of the three scenes; returns (rt, scene)."""
     import sionna.rt as rt
@@ -283,36 +365,19 @@ def monostatic_scene(params: BaseStationParams, scenario: str):
                                     pattern="iso", polarization="V")
     scene.rx_array = scene.tx_array
 
-    def add(name, ply, material):
-        handle = tempfile.NamedTemporaryFile("w", suffix=".ply",
-                                             delete=False)
-        handle.write(ply)
-        handle.close()
-        try:
-            scene.edit(add=rt.SceneObject(
-                fname=handle.name, name=name, radio_material=material))
-        finally:
-            os.unlink(handle.name)
-
-    ground = rt.RadioMaterial("ground", thickness=10.0,
-                              relative_permittivity=15.0,
-                              conductivity=0.035)
-    add("ground-plane", _ply_ground(800.0), ground)
-    concrete = rt.RadioMaterial("concrete", thickness=0.3,
-                                relative_permittivity=5.24,
-                                conductivity=0.123)
+    ground, concrete = _materials(rt)
+    _add_mesh(rt, scene, "ground-plane", _ply_ground(800.0), ground)
     if scenario in ("blocked", "reflector"):
-        add("blocker", _ply_box(150.0, 0.0, 40.0, 40.0, 60.0),
-            concrete)
+        _add_mesh(rt, scene, "blocker",
+                  _ply_box(150.0, 0.0, 40.0, 40.0, 60.0), concrete)
     if scenario == "reflector":
         # A long building row whose street-side wall (y = 80 m) can
         # mirror the signal around the blocker.
-        add("reflector", _ply_box(150.0, 90.0, 200.0, 20.0, 60.0),
-            concrete)
+        _add_mesh(rt, scene, "reflector",
+                  _ply_box(150.0, 90.0, 200.0, 20.0, 60.0), concrete)
 
-    scene.add(rt.Transmitter("bs", position=[0.0, 0.0, 15.0]))
-    scene.add(rt.Receiver("target-probe",
-                          position=[300.0, 0.0, 40.0]))
+    scene.add(rt.Transmitter("bs", position=STATION.tolist()))
+    scene.add(rt.Receiver("target-probe", position=TARGET.tolist()))
     return rt, scene
 
 
@@ -406,6 +471,18 @@ def monostatic_range(params: BaseStationParams, burst,
 # %% NOTE: building swallows everything -- no rays to draw. Blocked
 # %% NOTE: + reflector: the detour around the blocker via the
 # %% NOTE: building row's wall, plus its ground-bounce variants.
+# %% NOTE: \textbf{Order matters in this function.} The solve runs
+# %% NOTE: first, on the bare radio scene; only then are the mast
+# %% NOTE: and target meshes added and the picture drawn. Adding
+# %% NOTE: them first would put a solid box on top of the probe
+# %% NOTE: receiver and delete the very paths the figure exists to
+# %% NOTE: show. \texttt{show\_devices=False} then hides the
+# %% NOTE: default red/green endpoint dots, because the meshes now
+# %% NOTE: say the same thing with actual geometry: a 15\,m mast,
+# %% NOTE: and a target 300\,m down-range at 40\,m altitude. The
+# %% NOTE: target is drawn far larger than life -- at 0.4\,m per
+# %% NOTE: pixel a real vehicle is a smudge and a real drone is
+# %% NOTE: invisible -- so read it as a position marker, not a size.
 # %% IMAGE: figures/scene_los.png | Line-of-sight: the direct ray and the ground bounce reach the target.
 # %% IMAGE: figures/scene_blocked.png | Blocked: the solver finds no path at all -- there are no rays to draw.
 # %% IMAGE: figures/scene_reflector.png | Blocked + reflector: the wall of the building row mirrors the signal around the blocker (three paths, all longer than the straight line).
@@ -413,7 +490,8 @@ def render_scenes(params: BaseStationParams, out_dir="figures"):
     os.makedirs(out_dir, exist_ok=True)
     for scenario in ("los", "blocked", "reflector"):
         rt, scene = monostatic_scene(params, scenario)
-        paths, gains, _ = monostatic_legs(rt, scene)
+        paths, gains, _ = monostatic_legs(rt, scene)   # SOLVE FIRST
+        add_visual_markers(rt, scene, STATION, TARGET)
         camera = rt.Camera(position=[150.0, -340.0, 300.0],
                            look_at=[150.0, 20.0, 20.0])
         scene.render_to_file(
@@ -422,6 +500,7 @@ def render_scenes(params: BaseStationParams, out_dir="figures"):
                                   f"scene_{scenario}.png"),
             # The renderer cannot overlay an empty path list.
             paths=paths if gains.size else None,
+            show_devices=False,
             resolution=(900, 500))
 
 
@@ -787,6 +866,426 @@ def localization_study(params: BaseStationParams, trials=200,
     return sigmas, bound, errors
 
 
+# %% SECTION: Ghosts: put the target IN the scene
+# %% NOTE: Everything so far modeled the target as a point probe
+# %% NOTE: plus an analytic radar cross-section. That is the right
+# %% NOTE: tool for a link budget, and it is wrong for this
+# %% NOTE: question, because it can only ever return the target.
+# %% NOTE: A sensing receiver does not get a clean target return --
+# %% NOTE: it gets everything in the scene that sends energy back,
+# %% NOTE: and the hard part of the job is that most of those
+# %% NOTE: returns are not the object. So here the target becomes
+# %% NOTE: \textbf{geometry}: a $4{\times}2{\times}1.5$\,m metal
+# %% NOTE: box at the target position, meshed into the scene like
+# %% NOTE: any building. Each station gets a receiver co-located
+# %% NOTE: with its transmitter, and the solver is asked for the
+# %% NOTE: round trips directly -- station\,$\to$\,anything\,$\to$
+# %% NOTE: \,same station. No radar cross-section is applied and no
+# %% NOTE: legs are paired by hand: whatever comes back, comes back.
+TARGET_BOX = (4.0, 2.0, 1.5)          # w, d, h -- vehicle class
+GHOST_BLOCKER = (250.0, 160.0, 36.0, 36.0, 60.0)   # x, y, w, d, h
+GHOST_WALL = (150.0, 250.0, 400.0, 10.0, 60.0)
+LEAKAGE_GATE_M = 30.0   # ignore returns closer than this
+
+
+def multipath_scene(params: BaseStationParams, scenario: str,
+                    with_target=True):
+    """Four stations + a MESHED target in a built-up scene.
+
+    with_target=False builds the identical scene minus the target --
+    that is the clutter reference the study subtracts.
+    """
+    import sionna.rt as rt
+
+    scene = rt.load_scene()
+    scene.frequency = params.carrier_frequency_hz
+    scene.tx_array = rt.PlanarArray(num_rows=1, num_cols=1,
+                                    pattern="iso", polarization="V")
+    scene.rx_array = scene.tx_array
+    ground, concrete = _materials(rt)
+    _add_mesh(rt, scene, "ground-plane", _ply_ground(800.0), ground)
+    if scenario in ("multipath", "nlos"):
+        _add_mesh(rt, scene, "building-row",
+                  _ply_box(*GHOST_WALL), concrete)
+    if scenario == "nlos":
+        _add_mesh(rt, scene, "blocker",
+                  _ply_box(*GHOST_BLOCKER), concrete)
+
+    # The target itself, as an object. Metal: a conductor reflects
+    # essentially everything, which is the point -- this is the one
+    # thing in the scene we WANT to come back.
+    if with_target:
+        metal = rt.RadioMaterial("target-metal", thickness=0.002,
+                                 relative_permittivity=1.0,
+                                 conductivity=1e7,
+                                 color=(0.85, 0.10, 0.10))
+        width, depth, height = TARGET_BOX
+        _add_mesh(rt, scene, "target",
+                  _ply_box(DRONE[0], DRONE[1], width, depth, height,
+                           z0=DRONE[2] - height / 2.0), metal)
+
+    # Monostatic means the receiver IS the transmitter, so every
+    # station gets both. They are separated by half a meter rather
+    # than placed on the same point: a zero-length transmitter-to-
+    # receiver path is a degenerate case for a path solver, and at
+    # 200 m range half a meter changes no delay that matters (it is
+    # 1/15th of a resolution cell).
+    for index, station in enumerate(STATIONS):
+        scene.add(rt.Transmitter(f"bs-{index}",
+                                 position=station.tolist()))
+        receiver = station + np.array([0.0, 0.0, 0.5])
+        scene.add(rt.Receiver(f"rx-{index}",
+                              position=receiver.tolist()))
+    return rt, scene
+
+
+# %% SECTION: What actually comes back
+# %% NOTE: One solve gives every station its own round trips. Two
+# %% NOTE: pieces of bookkeeping. \textbf{Leakage}: a receiver
+# %% NOTE: sitting on its own transmitter sees a zero-length path
+# %% NOTE: -- in hardware this is the coupling that saturates the
+# %% NOTE: front end, and in both cases it is gated out by range.
+# %% NOTE: \textbf{Everything else is a return, and the solver does
+# %% NOTE: not label them.} Nothing in the output says ``this one
+# %% NOTE: is the target.'' The station gets the target echo, the
+# %% NOTE: ground under its own feet, the wall of the building row
+# %% NOTE: 245\,m away, the target-then-wall double bounce -- all
+# %% NOTE: as one list of (gain, delay) pairs, exactly as a real
+# %% NOTE: receiver gets them summed into one waveform.
+def monostatic_returns(rt, scene, min_range_m=LEAKAGE_GATE_M):
+    """One solve -> [(gains, delays)] of round trips per station."""
+    paths = rt.PathSolver()(scene, max_depth=3, los=True,
+                            specular_reflection=True,
+                            diffuse_reflection=False,
+                            refraction=False)
+    a, tau = paths.cir(normalize_delays=False, out_type="numpy")
+    # a: [rx, rx_ant, tx, tx_ant, path, time]; tau: [rx, tx, path].
+    # Monostatic = the diagonal: station i transmitting, station i
+    # listening. The off-diagonal entries are the bistatic pairs --
+    # real, useful, and a bigger study than this one.
+    minimum_delay = 2.0 * min_range_m / SPEED_OF_LIGHT
+    returns = []
+    for index in range(len(STATIONS)):
+        gains = a[index, 0, index, 0, :, 0]
+        delays = tau[index, index, :]
+        keep = delays >= minimum_delay      # drops padding AND leakage
+        returns.append((gains[keep], delays[keep]))
+    return paths, returns
+
+
+def roundtrip_echo(params: BaseStationParams, burst, gains, delays,
+                   pad=4096):
+    """Sum the traced round trips into one received waveform.
+
+    Contrast this with the probe model earlier: there, one-way legs
+    had to be paired (p out, q back) and a radar cross-section
+    supplied by hand. Here each entry already IS a round trip, so
+    the echo is a plain sum -- and it contains the clutter too.
+    """
+    ts = params.sample_period_s
+    amp_gain = 10.0 ** (params.antenna_gain_dbi / 20.0)
+    total = burst.size + pad
+    echo = np.zeros(total, complex)
+    for p in range(gains.size):
+        amplitude = (math.sqrt(params.tx_power_w) * amp_gain**2
+                     * gains[p])
+        echo += amplitude * fractional_delay(
+            burst, delays[p] / ts, total)
+    return echo
+
+
+# %% SECTION: Every peak is a candidate range
+# %% NOTE: The matched filter now returns a \emph{comb}, and the
+# %% NOTE: detector has no way to know which peak is the target --
+# %% NOTE: so take them all. The obvious way to peel them off is to
+# %% NOTE: find the largest, blank a resolution cell around it, and
+# %% NOTE: repeat; do that and the detector immediately reports
+# %% NOTE: three targets where there is one, because a burst's
+# %% NOTE: autocorrelation has \textbf{sidelobes} and the first
+# %% NOTE: pair sits about 2.5 cells out -- outside the blanked
+# %% NOTE: window and far above the noise floor. Sidelobes are not
+# %% NOTE: noise; they are a known, deterministic feature of the
+# %% NOTE: waveform, so they can be removed exactly. That is
+# %% NOTE: \textbf{CLEAN}: each time a peak is accepted, subtract a
+# %% NOTE: correctly scaled and shifted copy of the burst's own
+# %% NOTE: autocorrelation -- the full shape a single return makes,
+# %% NOTE: sidelobes included -- and look again at what is left.
+# %% NOTE: The correlation is also upsampled 16$\times$, for the
+# %% NOTE: reason \texttt{measure\_range} gives: the coarse
+# %% NOTE: parabola biases a peak by meters, and the residual test
+# %% NOTE: below cannot tell a wrong association from a biased
+# %% NOTE: right one if the right one is already off by half a cell.
+def _upsampled(spectrum, total, upsample):
+    padded = np.zeros(total * upsample, complex)
+    padded[: total // 2] = spectrum[: total // 2]
+    padded[-total // 2:] = spectrum[-total // 2:]
+    return np.fft.ifft(padded)
+
+
+def range_peaks(params: BaseStationParams, burst, echo,
+                max_peaks=4, upsample=16, snr_gate=30.0):
+    """All candidate ranges in one echo; (ranges_m, profile, grid)."""
+    ts = params.sample_period_s
+    if echo.size == 0:
+        return np.zeros(0), np.zeros(0), np.zeros(0)
+    total = echo.size
+    sigma = math.sqrt(params.noise_power_w / 2.0)
+    rx = echo + sigma * (rng.standard_normal(total)
+                         + 1j * rng.standard_normal(total))
+    burst_spectrum = np.fft.fft(burst, total)
+    correlation = _upsampled(np.fft.fft(rx) * np.conj(burst_spectrum),
+                             total, upsample)
+    # The response a SINGLE return produces: the burst correlated
+    # with itself, at the same upsampling. This is what CLEAN
+    # subtracts, and why sidelobes come out with the peak.
+    template = _upsampled(np.abs(burst_spectrum) ** 2, total,
+                          upsample)
+    search = (total - burst.size) * upsample
+    profile = np.abs(correlation[:search]) ** 2
+    grid = (np.arange(search) / upsample * ts
+            * SPEED_OF_LIGHT / 2.0)
+
+    floor = np.median(profile)
+    ranges = []
+    while len(ranges) < max_peaks:
+        power = np.abs(correlation[:search]) ** 2
+        index = int(np.argmax(power))
+        if power[index] < snr_gate * floor:
+            break
+        refined = float(index)
+        if 0 < index < search - 1:
+            num = power[index - 1] - power[index + 1]
+            den = (power[index - 1] - 2 * power[index]
+                   + power[index + 1])
+            if den != 0.0:
+                refined = index + 0.5 * num / den
+        ranges.append(refined / upsample * ts * SPEED_OF_LIGHT / 2.0)
+        amplitude = correlation[index] / template[0]
+        correlation = correlation - amplitude * np.roll(template,
+                                                        index)
+    return np.array(sorted(ranges)), profile, grid
+
+
+# %% SECTION: Association: where the ghosts come from
+# %% NOTE: Now the network has to decide which peak at station $i$
+# %% NOTE: belongs to the same object as which peak at station $j$
+# %% NOTE: -- the \textbf{association} problem, and it is
+# %% NOTE: combinatorial: with four candidates at each of four
+# %% NOTE: stations there are $4^4 = 256$ ways to pick one range
+# %% NOTE: each, and 255 of them are wrong. Each combination is a
+# %% NOTE: perfectly well-posed least-squares problem returning a
+# %% NOTE: perfectly plausible position. Those are the
+# %% NOTE: \textbf{ghost targets}. What saves the network is that
+# %% NOTE: four ranges determine three coordinates, leaving one
+# %% NOTE: degree of freedom: a wrong combination generally cannot
+# %% NOTE: be fitted by ANY position, so its residual is large and
+# %% NOTE: it can be gated away. Note the corollary, which is the
+# %% NOTE: real argument for the fourth station: with three
+# %% NOTE: stations the fit is exact, the residual is identically
+# %% NOTE: zero, and \emph{no} ghost can ever be rejected.
+def associate(candidates, stations, initial):
+    """Every one-peak-per-station combination -> a fix.
+
+    Returns [(position, residual_rms_m)], one per combination.
+    """
+    fixes = []
+    for combination in itertools.product(*candidates):
+        ranges = np.array(combination)
+        position = solve_position(ranges, stations, initial)
+        if not np.all(np.isfinite(position)):
+            continue
+        residual = ranges - np.linalg.norm(position - stations,
+                                           axis=1)
+        fixes.append((position,
+                      float(np.sqrt(np.mean(residual**2)))))
+    return fixes
+
+
+# %% SECTION: Clutter cancellation, and what it cannot remove
+# %% NOTE: Run the scene as built and the target is invisible --
+# %% NOTE: not marginal, invisible. A building wall reflects
+# %% NOTE: \emph{specularly}, so its return behaves like a mirror
+# %% NOTE: image of the transmitter and falls off as one-way
+# %% NOTE: spreading over the folded path; the target's return is a
+# %% NOTE: radar return and falls off as $r^{-4}$. The wall wins by
+# %% NOTE: tens of dB, and every peak the detector reports is the
+# %% NOTE: building. This is the real first problem in sensing, and
+# %% NOTE: it has a standard answer: the clutter does not move.
+# %% NOTE: Solve the identical scene \emph{without} the target,
+# %% NOTE: subtract that echo, and the static returns cancel. (In
+# %% NOTE: hardware the same cancellation is done in Doppler --
+# %% NOTE: same idea, and the reference is measured rather than
+# %% NOTE: simulated.) Now the important part: what survives the
+# %% NOTE: subtraction is everything that \emph{touched} the
+# %% NOTE: target, and that includes station\,$\to$\,target\,$\to$
+# %% NOTE: \,wall\,$\to$\,station. Clutter cancellation removes the
+# %% NOTE: scene; it cannot remove the target's own multipath. The
+# %% NOTE: ghosts come from what is left.
+
+
+# %% SECTION: The ghost study, and the picture of it
+# %% NOTE: One run per scenario: solve the scene twice (with and
+# %% NOTE: without the target), cancel, pull every peak, enumerate
+# %% NOTE: the associations, gate on the residual, report what
+# %% NOTE: survives. Read the map as three claims. \texttt{open}:
+# %% NOTE: nothing but ground and target, association is nearly
+# %% NOTE: unique. \texttt{multipath}: the target is also seen
+# %% NOTE: around the building row, so each station reports extra
+# %% NOTE: ranges and a lattice of ghost fixes appears; the
+# %% NOTE: residual gate kills most, and the survivors are the
+# %% NOTE: dangerous ones -- consistent positions where nothing is
+# %% NOTE: flying. \texttt{nlos}: the blocker removes the north-east
+# %% NOTE: station's direct view, so its only target-bearing return
+# %% NOTE: is the detour and the best association is confidently
+# %% NOTE: wrong. That is the failure worth remembering: not a
+# %% NOTE: large error announcing itself, but a small residual on
+# %% NOTE: the wrong answer.
+def ghost_study(params: BaseStationParams, gate_m=2.0,
+                out_dir="figures"):
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    os.makedirs(out_dir, exist_ok=True)
+    burst = make_ofdm_burst(params)
+    initial = np.array([150.0, 100.0, 120.0])   # off the plane!
+    true_ranges = np.linalg.norm(DRONE - STATIONS, axis=1)
+    scenarios = ("open", "multipath", "nlos")
+    fig_map, map_axes = plt.subplots(1, 3, figsize=(13, 4.6),
+                                     sharex=True, sharey=True)
+    fig_pro, pro_axes = plt.subplots(len(STATIONS), 3,
+                                     figsize=(13, 8), sharex=True)
+    for column, scenario in enumerate(scenarios):
+        rt, scene = multipath_scene(params, scenario)
+        _, returns = monostatic_returns(rt, scene)
+        rt, empty_scene = multipath_scene(params, scenario,
+                                          with_target=False)
+        _, clutter = monostatic_returns(rt, empty_scene)
+        candidates, profiles, grids, raw_profiles = [], [], [], []
+        for (gains, delays), (cg, cd) in zip(returns, clutter):
+            echo = roundtrip_echo(params, burst, gains, delays)
+            reference = roundtrip_echo(params, burst, cg, cd)
+            # Noise is added once, inside range_peaks: the reference
+            # is a stored clutter map, not a second noisy capture.
+            ranges, profile, grid = range_peaks(params, burst,
+                                                echo - reference)
+            candidates.append(ranges)
+            profiles.append(profile)
+            grids.append(grid)
+            raw_profiles.append(range_peaks(params, burst, echo)[1])
+
+        # Did the ray tracer actually find the target? A peak within
+        # one resolution cell of the true range says yes. This is
+        # the check that decides whether the run means anything.
+        cell = SPEED_OF_LIGHT / (2.0 * params.bandwidth_hz)
+        found = [bool(np.any(np.abs(c - t) < cell))
+                 for c, t in zip(candidates, true_ranges)]
+        counts = [len(c) for c in candidates]
+        print(f"  {scenario:9s}: returns/station "
+              f"{[g.size for g, _ in returns]}, peaks {counts}, "
+              f"target seen by {sum(found)}/{len(found)} stations")
+
+        if min(counts) == 0:
+            fixes, kept = [], []
+            print("             a station heard nothing at all -- "
+                  "no fix is possible")
+        else:
+            fixes = associate(candidates, STATIONS, initial)
+            kept = [f for f in fixes if f[1] <= gate_m]
+            print(f"             {len(fixes)} associations, "
+                  f"{len(kept)} survive the {gate_m:.0f} m gate")
+        if kept:
+            errors = [np.linalg.norm(p - DRONE) for p, _ in kept]
+            best = min(kept, key=lambda f: f[1])
+            # Two separate questions, and they have different
+            # answers: is the truth still in the surviving set, and
+            # does the survivor the network would PICK happen to be
+            # it? A ghost can fit better than the target.
+            truth_survives = min(errors) < 5.0
+            print(f"             {sum(e > 5.0 for e in errors)} of "
+                  f"{len(kept)} survivors are ghosts; truth "
+                  f"{'survives' if truth_survives else 'is GONE'} "
+                  f"(closest {min(errors):.1f} m)")
+            print(f"             lowest-residual fix is "
+                  f"{np.linalg.norm(best[0] - DRONE):6.1f} m from "
+                  f"the target (residual {best[1]:.2f} m)")
+
+        axis = map_axes[column]
+        buildings = []
+        if scenario in ("multipath", "nlos"):
+            buildings.append(GHOST_WALL)
+        if scenario == "nlos":
+            buildings.append(GHOST_BLOCKER)
+        for bx, by, bw, bd, _ in buildings:
+            axis.add_patch(plt.Rectangle((bx - bw / 2, by - bd / 2),
+                                         bw, bd, color="0.75"))
+        rejected = np.array([p for p, r in fixes if r > gate_m])
+        survived = np.array([p for p, r in kept])
+        if rejected.size:
+            axis.scatter(rejected[:, 0], rejected[:, 1], s=18,
+                         facecolors="none", edgecolors="0.6",
+                         label="rejected by residual")
+        if survived.size:
+            axis.scatter(survived[:, 0], survived[:, 1], s=26,
+                         color="C3", label="survives the gate")
+        axis.scatter(STATIONS[:, 0], STATIONS[:, 1], marker="s",
+                     s=45, color="C0", label="base stations")
+        axis.plot(DRONE[0], DRONE[1], "k+", markersize=14,
+                  markeredgewidth=2, label="true target")
+        axis.set_title(scenario)
+        axis.set_xlabel("x (m)")
+        axis.set_aspect("equal")
+        if column == 0:
+            axis.set_ylabel("y (m)")
+            axis.legend(fontsize=7, loc="upper left")
+
+        for row in range(len(STATIONS)):
+            paxis = pro_axes[row, column]
+            profile, grid = profiles[row], grids[row]
+            if profile.size:
+                keep = grid <= 500.0
+                paxis.semilogy(grid[keep], raw_profiles[row][keep],
+                               lw=0.7, color="0.7",
+                               label="before cancellation")
+                paxis.semilogy(grid[keep], profile[keep], lw=0.8,
+                               color="C0", label="after")
+                for candidate in candidates[row]:
+                    paxis.axvline(candidate, color="C3", lw=0.8,
+                                  ls=":")
+            paxis.axvline(true_ranges[row], color="k", lw=1.0)
+            if row == 0 and column == 0:
+                paxis.legend(fontsize=6)
+            if column == 0:
+                paxis.set_ylabel(f"bs-{row}")
+            if row == 0:
+                paxis.set_title(scenario)
+            if row == len(STATIONS) - 1:
+                paxis.set_xlabel("range (m)")
+
+    fig_map.tight_layout()
+    fig_map.savefig(os.path.join(out_dir, "ghost_map.png"), dpi=150)
+    fig_pro.tight_layout()
+    fig_pro.savefig(os.path.join(out_dir, "ghost_profiles.png"),
+                    dpi=150)
+
+
+# %% IMAGE: figures/ghost_profiles.png | Matched-filter range profiles, one row per station, one column per scenario. Solid line = the target's true range; dotted lines = the peaks the detector actually reports. Every peak that is not on the solid line is a return from something that is not the target.
+# %% IMAGE: figures/ghost_map.png | Every association, solved. Hollow circles are combinations the residual gate rejects; filled circles survive. Open ground gives essentially one answer; the building row breeds a lattice of ghosts and some are consistent enough to survive; under blockage the surviving cluster no longer contains the truth.
+# %% IMAGE: figures/scene_ghost.png | The NLOS scene as the ray tracer sees it, with every traced round trip drawn: the blocker cutting the north-east station off, and the building row returning the detour that replaces it. The target IS in this scene as a 4 m metal box -- the enlarged red marker around it is drawn after the solve, so the picture can show where it is.
+def render_ghost_scene(params: BaseStationParams,
+                       out_dir="figures"):
+    os.makedirs(out_dir, exist_ok=True)
+    rt, scene = multipath_scene(params, "nlos")
+    paths, _ = monostatic_returns(rt, scene)      # SOLVE FIRST
+    add_visual_markers(rt, scene, STATIONS, DRONE, scale=16.0)
+    camera = rt.Camera(position=[150.0, -430.0, 420.0],
+                       look_at=[150.0, 120.0, 30.0])
+    scene.render_to_file(
+        camera=camera,
+        filename=os.path.join(out_dir, "scene_ghost.png"),
+        paths=paths, show_devices=False, resolution=(900, 560))
+
+
 # %% SECTION: Run Part II
 # %% NOTE: Everything measured in one run (exact output below the
 # %% NOTE: code). Training fields: 500/500 exact timing, 1.03\,kHz
@@ -837,6 +1336,10 @@ if __name__ == "__main__":
 
     localization_study(params)
 
+    print("ghosts (4 stations, built-up scene):")
+    ghost_study(params)
+
     print("rendering scenes and range profiles into figures/ ...")
     render_scenes(params)
     range_profile_figure(params)
+    render_ghost_scene(params)
